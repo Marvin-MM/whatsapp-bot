@@ -106,7 +106,7 @@ describe('env schema', () => {
 describe('env startup (child process)', () => {
   function run(env: Record<string, string>) {
     return spawnSync('node_modules/.bin/tsx', ['--conditions=react-server', 'test/fixtures/env-probe.ts'], {
-      env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env },
+      env: { NODE_ENV: 'test', PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env },
       encoding: 'utf8',
       cwd: process.cwd(),
     });
