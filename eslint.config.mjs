@@ -36,7 +36,8 @@ export default defineConfig([
   },
   {
     // env.ts owns process.env; tooling configs and test bootstrap necessarily set it.
-    files: ['src/lib/env.ts', '*.config.{ts,mjs}', 'test/**/*.ts'],
+    // instrumentation.ts must read NEXT_RUNTIME literally so the bundler can drop Node-only code from the Edge bundle.
+    files: ['src/lib/env.ts', 'src/instrumentation.ts', '*.config.{ts,mjs}', 'test/**/*.ts'],
     rules: { 'no-restricted-properties': 'off' },
   },
 ]);

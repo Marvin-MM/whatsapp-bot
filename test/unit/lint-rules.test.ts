@@ -51,9 +51,15 @@ describe('process.env restriction', () => {
     expect(await ruleIds(code, 'src/app/example.ts')).toContain('no-restricted-properties');
   });
 
-  it('allows process.env in env.ts and test bootstrap', async () => {
+  it('allows process.env in env.ts, instrumentation.ts (NEXT_RUNTIME) and test bootstrap', async () => {
     expect(await ruleIds(code, 'src/lib/env.ts')).not.toContain('no-restricted-properties');
+    expect(await ruleIds(code, 'src/instrumentation.ts')).not.toContain('no-restricted-properties');
     expect(await ruleIds(code, 'test/setup/example.ts')).not.toContain('no-restricted-properties');
+  });
+
+  it('the instrumentation exception is narrow: its Node-only sibling and everything else stay restricted', async () => {
+    expect(await ruleIds(code, 'src/instrumentation-node.ts')).toContain('no-restricted-properties');
+    expect(await ruleIds(code, 'src/proxy.ts')).toContain('no-restricted-properties');
   });
 });
 

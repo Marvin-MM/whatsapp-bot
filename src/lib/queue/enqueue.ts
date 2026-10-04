@@ -1,5 +1,6 @@
 import 'server-only';
 import type { Job, JobsOptions, Queue } from 'bullmq';
+import { withDeadline } from '@/lib/async';
 import { getQueue } from './queues';
 import type { QueueName } from './names';
 
@@ -35,18 +36,11 @@ export async function enqueueOn<T>(
   timeoutMs: number = ENQUEUE_TIMEOUT_MS,
 ): Promise<Job> {
   const jobOptions: JobsOptions = options.jobId === undefined ? options : { ...options, jobId: toJobId(options.jobId) };
-  const pending = queue.add(jobName, data, jobOptions);
-  pending.catch(() => undefined); // a late rejection after the deadline must not become unhandled
-
-  let timer: NodeJS.Timeout | undefined;
-  const deadline = new Promise<never>((_resolve, reject) => {
-    timer = setTimeout(() => reject(new QueueUnavailableError(`enqueue to "${queue.name}" timed out after ${timeoutMs}ms`)), timeoutMs);
-  });
-  try {
-    return await Promise.race([pending, deadline]);
-  } finally {
-    clearTimeout(timer);
-  }
+  return withDeadline(
+    queue.add(jobName, data, jobOptions),
+    timeoutMs,
+    () => new QueueUnavailableError(`enqueue to "${queue.name}" timed out after ${timeoutMs}ms`),
+  );
 }
 
 /** Enqueue onto a catalog queue with the catalog's default retry/backoff options. */
