@@ -3,6 +3,7 @@ import { inArray, isNull, and } from 'drizzle-orm';
 import type { Db } from '@/lib/db';
 import { webhookEvents } from '@/lib/db/schema';
 import type { SplitItem } from '@/lib/whatsapp/webhook-split';
+import { stripNulChars } from './sanitize';
 
 const INSERT_CHUNK = 200;
 const LOOKUP_CHUNK = 500;
@@ -25,7 +26,7 @@ export async function persistEvents(db: Db, items: readonly SplitItem[]): Promis
     for (const batch of chunks(items, INSERT_CHUNK)) {
       await tx
         .insert(webhookEvents)
-        .values(batch.map((item) => ({ dedupeKey: item.dedupeKey, kind: item.kind, payload: item.item })))
+        .values(batch.map((item) => ({ dedupeKey: item.dedupeKey, kind: item.kind, payload: stripNulChars(item.item) })))
         .onConflictDoNothing({ target: webhookEvents.dedupeKey });
     }
   });
@@ -45,6 +46,6 @@ export async function persistEvents(db: Db, items: readonly SplitItem[]): Promis
 export async function persistRaw(db: Db, dedupeKey: string, kind: string, payload: unknown): Promise<void> {
   await db
     .insert(webhookEvents)
-    .values({ dedupeKey, kind, payload })
+    .values({ dedupeKey, kind, payload: stripNulChars(payload) })
     .onConflictDoNothing({ target: webhookEvents.dedupeKey });
 }

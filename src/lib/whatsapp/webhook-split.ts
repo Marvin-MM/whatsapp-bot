@@ -41,6 +41,13 @@ export const ACCOUNT_FIELDS: ReadonlySet<string> = new Set([
 
 const digest = (value: unknown): string => sha256Hex(stableStringify(value));
 
+/*
+ * Dedupe keys for events with no natural id (account state, app-state syncs, preferences) hash the payload PLUS the
+ * entry's `time`. Meta resends the same entry (same time) on a retry, so replays still collapse; but a state that
+ * legitimately recurs (quality GREEN -> YELLOW -> GREEN -> YELLOW, a contact renamed back to its old name) has a new
+ * time and is processed again instead of being dropped as a duplicate of the first occurrence.
+ */
+
 /** An edit or revoke may reuse an id; the suffix keeps it from being deduped away as a replay of the original. */
 function flagSuffix(message: { edited?: boolean | undefined; revoked?: boolean | undefined }): string {
   if (message.revoked) return ':revoked';
@@ -52,7 +59,7 @@ function park(field: string, value: unknown): SplitItem {
   return { dedupeKey: `other:${field}:${digest(value)}`, kind: 'other', item: { field, value, parseError: true } };
 }
 
-function splitMessagesField(value: unknown): SplitItem[] {
+function splitMessagesField(value: unknown, entryTime: number | undefined): SplitItem[] {
   const parsed = messagesFieldValueSchema.safeParse(value);
   if (!parsed.success) return [park('messages', value)];
   const { metadata, contacts, messages = [], statuses = [], errors } = parsed.data;
@@ -74,7 +81,7 @@ function splitMessagesField(value: unknown): SplitItem[] {
   }
   if (errors && errors.length > 0) {
     items.push({
-      dedupeKey: `other:messages-errors:${digest(errors)}`,
+      dedupeKey: `other:messages-errors:${digest({ entryTime, errors })}`,
       kind: 'other',
       item: { field: 'messages', value: { metadata, errors } },
     });
@@ -119,18 +126,18 @@ function splitHistoryField(value: unknown): SplitItem[] {
   return items;
 }
 
-function splitAppStateField(value: unknown): SplitItem[] {
+function splitAppStateField(value: unknown, entryTime: number | undefined): SplitItem[] {
   const parsed = appStateFieldValueSchema.safeParse(value);
   if (!parsed.success) return [park('smb_app_state_sync', value)];
   const { metadata, request_id: requestId, contacts = [], errors } = parsed.data;
   const items: SplitItem[] = contacts.map((contact) => ({
-    dedupeKey: `appstate:${digest({ requestId, contact })}`,
+    dedupeKey: `appstate:${digest({ entryTime, requestId, contact })}`,
     kind: 'app_state' as const,
     item: { field: 'smb_app_state_sync', metadata, request_id: requestId, contact },
   }));
   if (errors && errors.length > 0) {
     items.push({
-      dedupeKey: `appstate-error:${digest({ requestId, errors })}`,
+      dedupeKey: `appstate-error:${digest({ entryTime, requestId, errors })}`,
       kind: 'app_state',
       item: { field: 'smb_app_state_sync', metadata, request_id: requestId, errors },
     });
@@ -149,34 +156,34 @@ function splitUserIdUpdateField(value: unknown): SplitItem[] {
   }));
 }
 
-function splitUserPreferencesField(value: unknown): SplitItem[] {
+function splitUserPreferencesField(value: unknown, entryTime: number | undefined): SplitItem[] {
   const parsed = userPreferencesFieldValueSchema.safeParse(value);
   if (!parsed.success) return [park('user_preferences', value)];
   const { metadata, user_preferences: preferences } = parsed.data;
   return preferences.map((preference) => ({
-    dedupeKey: `userpref:${digest(preference)}`,
+    dedupeKey: `userpref:${digest({ entryTime, preference })}`,
     kind: 'user_preferences' as const,
     item: { field: 'user_preferences', metadata, preference },
   }));
 }
 
-function splitChange(field: string, value: unknown): SplitItem[] {
+function splitChange(field: string, value: unknown, entryTime: number | undefined): SplitItem[] {
   switch (field) {
     case 'messages':
-      return splitMessagesField(value);
+      return splitMessagesField(value, entryTime);
     case 'smb_message_echoes':
       return splitEchoField(value);
     case 'history':
       return splitHistoryField(value);
     case 'smb_app_state_sync':
-      return splitAppStateField(value);
+      return splitAppStateField(value, entryTime);
     case 'user_id_update':
       return splitUserIdUpdateField(value);
     case 'user_preferences':
-      return splitUserPreferencesField(value);
+      return splitUserPreferencesField(value, entryTime);
     default: {
       const kind: EventKind = ACCOUNT_FIELDS.has(field) ? 'account' : 'other';
-      return [{ dedupeKey: `${kind === 'account' ? 'account' : 'other'}:${field}:${digest(value)}`, kind, item: { field, value } }];
+      return [{ dedupeKey: `${kind}:${field}:${digest({ entryTime, value })}`, kind, item: { field, value } }];
     }
   }
 }
@@ -191,7 +198,7 @@ export function splitEnvelope(envelope: Envelope): SplitItem[] {
   const out: SplitItem[] = [];
   for (const entry of envelope.entry) {
     for (const change of entry.changes) {
-      for (const item of splitChange(change.field, change.value)) {
+      for (const item of splitChange(change.field, change.value, entry.time)) {
         if (seen.has(item.dedupeKey)) continue;
         seen.add(item.dedupeKey);
         out.push(item);

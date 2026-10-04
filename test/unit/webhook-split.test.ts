@@ -164,6 +164,30 @@ describe('splitEnvelope: general properties', () => {
     expect(new Set(keys).size).toBe(3);
   });
 
+  it('keeps replays of an id-less event collapsed but lets a recurring state through (keyed on the entry time)', () => {
+    const quality = (time: number) => {
+      const parsed = parseEnvelope({
+        object: 'whatsapp_business_account',
+        entry: [{ id: 'w', time, changes: [{ field: 'phone_number_quality_update', value: { event: 'FLAGGED', current_limit: 'TIER_1K' } }] }],
+      });
+      if (!parsed.ok) throw new Error('should parse');
+      return splitEnvelope(parsed.envelope)[0]?.dedupeKey;
+    };
+    expect(quality(1791100000)).toBe(quality(1791100000)); // Meta's retry of the same entry
+    expect(quality(1791100000)).not.toBe(quality(1791200000)); // the same state recurring a day later
+
+    const rename = (time: number) => {
+      const parsed = parseEnvelope({
+        object: 'whatsapp_business_account',
+        entry: [{ id: 'w', time, changes: [{ field: 'smb_app_state_sync', value: { metadata: {}, contacts: [{ wa_id: '256700123456', profile: { name: 'Amina' } }] } }] }],
+      });
+      if (!parsed.ok) throw new Error('should parse');
+      return splitEnvelope(parsed.envelope)[0]?.dedupeKey;
+    };
+    // "Amina" -> "A" -> "Amina": the second "Amina" must not be deduped against the first.
+    expect(rename(1791100000)).not.toBe(rename(1791300000));
+  });
+
   it('every fixture is classified in the manifest', () => {
     const recorded = manifest();
     for (const name of allFixtureNames()) {
