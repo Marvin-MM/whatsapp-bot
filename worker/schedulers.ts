@@ -11,7 +11,9 @@ export interface SchedulerDefinition {
  * sweep-webhook-events and alerts-scan every 5 min, token-health and purge-payloads daily,
  * autopilot-digest daily in the owner's evening (pattern + tz).
  */
-export const SCHEDULER_DEFINITIONS: readonly SchedulerDefinition[] = [];
+export const SCHEDULER_DEFINITIONS: readonly SchedulerDefinition[] = [
+  { id: 'sweep-webhook-events', repeat: { every: 5 * 60 * 1000 } },
+];
 
 /**
  * Makes the queue's job schedulers exactly match `definitions`: upsert is idempotent across restarts,

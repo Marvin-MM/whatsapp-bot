@@ -43,6 +43,31 @@ export async function enqueueOn<T>(
   );
 }
 
+export interface BulkJob {
+  name: string;
+  data: unknown;
+  opts?: JobsOptions;
+}
+
+/** Bulk variant of `enqueueOn`: one round trip, one deadline (scaled with the batch size). Job ids are encoded as above. */
+export async function enqueueBulkOn(queue: Queue, jobs: readonly BulkJob[], timeoutMs?: number): Promise<Job[]> {
+  if (jobs.length === 0) return [];
+  const prepared = jobs.map((job) => {
+    const opts = job.opts ?? {};
+    return { name: job.name, data: job.data, opts: opts.jobId === undefined ? opts : { ...opts, jobId: toJobId(opts.jobId) } };
+  });
+  const deadline = timeoutMs ?? ENQUEUE_TIMEOUT_MS + Math.min(jobs.length, 2000) * 5;
+  return withDeadline(
+    queue.addBulk(prepared),
+    deadline,
+    () => new QueueUnavailableError(`bulk enqueue of ${jobs.length} jobs to "${queue.name}" timed out after ${deadline}ms`),
+  );
+}
+
+export function enqueueBulk(name: QueueName, jobs: readonly BulkJob[]): Promise<Job[]> {
+  return enqueueBulkOn(getQueue(name), jobs);
+}
+
 /** Enqueue onto a catalog queue with the catalog's default retry/backoff options. */
 export function enqueue<T>(name: QueueName, jobName: string, data: T, options: JobsOptions = {}): Promise<Job> {
   return enqueueOn(getQueue(name), jobName, data, options);
