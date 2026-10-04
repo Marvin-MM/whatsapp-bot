@@ -1,0 +1,76 @@
+# Local development stack.
+#   docker compose up -d                 -> Postgres 16 + Redis only (run web/worker on your host: pnpm dev, pnpm dev:worker)
+#   docker compose --profile full up -d  -> also builds and runs web + worker in containers
+#
+# The Postgres superuser below is for local development only. Roles and databases (wab, wab_test) are created
+# on first start by scripts/db-init/01-roles.sql. NOTE: that script only runs on a FRESH volume; to re-run it
+# use `docker compose down -v`.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/db-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    # BullMQ requires noeviction: evicting queue keys would silently lose jobs.
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  web:
+    profiles: ["full"]
+    build: .
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://wab_app:wab_app_dev@postgres:5432/wab
+      DATABASE_MIGRATION_URL: postgres://wab_migrator:wab_migrator_dev@postgres:5432/wab
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "3000:3000"
+    volumes:
+      - media:/app/data/media
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+  worker:
+    profiles: ["full"]
+    build: .
+    command: ["pnpm", "worker"]
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgres://wab_app:wab_app_dev@postgres:5432/wab
+      DATABASE_MIGRATION_URL: postgres://wab_migrator:wab_migrator_dev@postgres:5432/wab
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - media:/app/data/media
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+
+volumes:
+  pgdata:
+  redisdata:
+  media:
