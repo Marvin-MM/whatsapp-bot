@@ -5,8 +5,8 @@ summaries/tasks -> (later, gated) autopilot. One owner, one number, <500 msgs/da
 No horizontal scaling, no multi-tenancy. Every abstraction must justify itself against that.
 
 Authority: the build spec (phases 0-7), amended by `DECISIONS.md`. Read `DECISIONS.md` first: it records where this repo
-deliberately differs from the spec and why. **One phase per session**: finish, run acceptance, write the phase report
-(`docs/phase-reports/`), stop, wait for go-ahead.
+deliberately differs from the spec and why. **Phases 1-7 were authorized to run continuously** (owner request, D-030): finish
+a phase, run acceptance, write the phase report (`docs/phase-reports/`), push, continue. Stop only for something the owner must supply.
 
 ## Commands
 ```

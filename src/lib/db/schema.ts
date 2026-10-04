@@ -29,6 +29,8 @@ import type { StyleGuideContent } from '../schemas/style-guide';
  *   A3 messages.edited_at / deleted_at
  *   A4 messages.transcription_status
  *   A5 webhook_events.payload nullable (purged after 30 days; the row keeps its dedupe_key)
+ *   A6 contacts.username
+ *   A7 messages.marked_bad_at
  */
 
 const tstz = (name: string) => timestamp(name, { withTimezone: true, mode: 'date' });
@@ -138,6 +140,8 @@ export const contacts = pgTable(
     phoneE164: text('phone_e164').unique(),
     source: contactSource('source').notNull().default('webhook'),
     displayName: text('display_name'),
+    /** WhatsApp username (A6): a user may arrive with a BSUID and a username but no phone number. */
+    username: text('username'),
     notes: text('notes'),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -203,6 +207,8 @@ export const messages = pgTable(
     sendStartedAt: tstz('send_started_at'),
     editedAt: tstz('edited_at'),
     deletedAt: tstz('deleted_at'),
+    /** Owner flagged this autopilot message as bad (A7); demotes the conversation and feeds review. */
+    markedBadAt: tstz('marked_bad_at'),
     occurredAt: tstz('occurred_at').notNull(),
     createdAt: createdAt(),
     contentTsv: tsvector('content_tsv').generatedAlwaysAs(sql`to_tsvector('simple', coalesce(content, ''))`),
