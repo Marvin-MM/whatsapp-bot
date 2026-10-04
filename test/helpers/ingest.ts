@@ -176,7 +176,7 @@ export async function seedMessage(
   const [row] = await admin<{ id: string }[]>`
     INSERT INTO messages (id, conversation_id, direction, wamid, type, content, provenance, status, occurred_at, media_id)
     VALUES (coalesce(${o.id ?? null}::uuid, gen_random_uuid()), ${conversationId}, ${direction}, ${o.wamid ?? null}, ${o.type ?? 'text'},
-            ${o.content ?? 'seeded'}, ${o.provenance ?? (direction === 'inbound' ? 'customer' : 'owner_manual')},
+            ${o.content === undefined ? 'seeded' : o.content}, ${o.provenance ?? (direction === 'inbound' ? 'customer' : 'owner_manual')},
             ${o.status ?? (direction === 'inbound' ? 'received' : 'sent')}, ${o.occurredAt ?? T0}, ${o.mediaId ?? null})
     RETURNING id`;
   if (!row) throw new Error('seedMessage failed');

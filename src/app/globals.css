@@ -42,6 +42,8 @@
   --success: #15803d;
   --info: #1d4ed8;
   color-scheme: light;
+  /* Height of the sticky app header; kept exact at runtime by <ShellHeaderHeight>. This is the single-row default. */
+  --shell-header-h: 3.3rem;
 }
 
 @media (prefers-color-scheme: dark) {
