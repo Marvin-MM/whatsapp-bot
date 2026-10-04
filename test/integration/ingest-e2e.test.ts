@@ -1,30 +1,44 @@
+import { createHash } from 'node:crypto';
+import { mkdtempSync } from 'node:fs';
+import { readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Queue } from 'bullmq';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Sql } from 'postgres';
 import { closeProducerConnection } from '@/lib/queue/connection';
 import { closeQueues } from '@/lib/queue/queues';
 import { handleWebhookPost } from '@/lib/whatsapp/webhook-intake';
 import { type WorkerRuntime, startWorkers } from '../../worker/runtime';
+import { downloadMediaProcessor } from '../../worker/processors/download-media';
 import { processWebhookEventProcessor } from '../../worker/processors/process-webhook-event';
 import { closeAllDb, migratorSql, resetDb } from '../helpers/db';
 import { FIXTURE } from '../helpers/fixtures';
 import { count, seedContact, seedConversation, seedMessage } from '../helpers/ingest';
 import { cleanupPrefix, createTestRedis, uniquePrefix } from '../helpers/redis';
+import { MEDIA_HOST, jsonResponse, stubNetwork } from '../helpers/network';
 import { fixtureRequest } from '../helpers/webhook';
 
 // The whole path, with nothing mocked: Meta's POST -> signature -> persist -> BullMQ -> a real worker -> the database.
 const prefix = uniquePrefix();
 process.env.BULLMQ_PREFIX = prefix;
+const mediaRoot = mkdtempSync(join(tmpdir(), 'wab-e2e-media-'));
+process.env.MEDIA_STORAGE_DIR = mediaRoot;
 
 let admin: Sql;
 let runtime: WorkerRuntime;
 let queue: Queue;
+let mediaQueue: Queue;
 const redis = createTestRedis();
 
 beforeAll(async () => {
   admin = migratorSql();
-  runtime = await startWorkers([{ queue: 'process-webhook-event', processor: processWebhookEventProcessor }]);
+  runtime = await startWorkers([
+    { queue: 'process-webhook-event', processor: processWebhookEventProcessor },
+    { queue: 'download-media', processor: downloadMediaProcessor },
+  ]);
   queue = new Queue('process-webhook-event', { connection: createTestRedis(), prefix });
+  mediaQueue = new Queue('download-media', { connection: createTestRedis(), prefix });
 });
 
 beforeEach(async () => {
@@ -32,10 +46,17 @@ beforeEach(async () => {
   // BullMQ ignores an add whose job id it still retains (completed jobs are kept for a day): a truncated database with a
   // stale job would silently never process the "same" event again. Production never deletes webhook_events rows.
   await queue.obliterate({ force: true });
+  await mediaQueue.obliterate({ force: true });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 afterAll(async () => {
+  await rm(mediaRoot, { recursive: true, force: true });
   await queue.close();
+  await mediaQueue.close();
   await runtime.stop();
   await closeQueues();
   await closeProducerConnection();
@@ -101,5 +122,22 @@ describe('webhook POST -> queue -> worker -> database', () => {
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(await count(admin, 'messages')).toBe(1);
     expect(await count(admin, 'webhook_events')).toBe(1);
+  });
+
+  it('an image goes all the way: POST -> worker -> download-media job -> worker -> verified file on disk', async () => {
+    const bytes = new Uint8Array(1500).map((_, i) => (i * 13) % 256);
+    stubNetwork({
+      graphInfo: () => jsonResponse({ url: `${MEDIA_HOST}/file/e2e`, mime_type: 'image/jpeg', sha256: createHash('sha256').update(bytes).digest('hex'), file_size: bytes.byteLength }),
+      download: () => new Response(new Uint8Array(bytes), { headers: { 'content-type': 'image/jpeg' } }),
+    });
+
+    expect((await handleWebhookPost(fixtureRequest('image-caption'))).status).toBe(200);
+
+    await until(async () => (await admin<Array<{ media_path: string | null }>>`SELECT media_path FROM messages`)[0]?.media_path != null);
+    const [message] = await admin<Array<{ id: string; media_path: string; media_mime: string }>>`SELECT id, media_path, media_mime FROM messages`;
+    expect(message?.media_mime).toBe('image/jpeg');
+    expect(message?.media_path).toMatch(new RegExp(`^\\d{4}/\\d{2}/${message?.id}\\.jpg$`));
+    const year = (await readdir(mediaRoot))[0] ?? '';
+    expect(year).toMatch(/^\d{4}$/);
   });
 });

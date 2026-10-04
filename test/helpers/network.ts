@@ -1,0 +1,64 @@
+import { vi } from 'vitest';
+import type { CapturedRequest, GroqHandler } from './groq';
+
+export const MEDIA_HOST = 'https://lookaside.fbsbx.com';
+
+export interface NetworkRoutes {
+  /** `GET https://graph.facebook.com/{version}/{media-id}` */
+  graphInfo?: (mediaId: string) => Response | Promise<Response>;
+  /** `GET https://lookaside.fbsbx.com/...` (the file itself) */
+  download?: (url: string) => Response | Promise<Response>;
+  /** Anything under https://api.groq.com/ */
+  groq?: GroqHandler;
+}
+
+export interface NetworkCalls {
+  graph: string[];
+  download: string[];
+  groq: CapturedRequest[];
+}
+
+/**
+ * Stubs global fetch for everything the media pipeline talks to (Meta Graph, Meta's CDN, Groq): the network layer is the
+ * only thing mocked. Any other host is a test bug and throws instead of leaving the machine.
+ */
+export function stubNetwork(routes: NetworkRoutes): NetworkCalls {
+  const calls: NetworkCalls = { graph: [], download: [], groq: [] };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith('https://graph.facebook.com/')) {
+        const id = decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '');
+        calls.graph.push(id);
+        if (!routes.graphInfo) throw new Error('no graphInfo route in this test');
+        return routes.graphInfo(id);
+      }
+      if (url.startsWith(MEDIA_HOST)) {
+        calls.download.push(url);
+        if (!routes.download) throw new Error('no download route in this test');
+        return routes.download(url);
+      }
+      if (url.startsWith('https://api.groq.com/')) {
+        const headers: Record<string, string> = {};
+        new Headers(init?.headers).forEach((value, key) => (headers[key] = value));
+        let body: Record<string, unknown> | null = null;
+        let formFields: Record<string, string> | null = null;
+        if (typeof init?.body === 'string') body = JSON.parse(init.body) as Record<string, unknown>;
+        else if (init?.body instanceof FormData) {
+          formFields = {};
+          for (const [key, value] of init.body.entries()) formFields[key] = typeof value === 'string' ? value : `[file ${value.size} bytes]`;
+        }
+        const captured: CapturedRequest = { url, path: new URL(url).pathname, body, headers, formFields };
+        calls.groq.push(captured);
+        if (!routes.groq) throw new Error('no groq route in this test');
+        return routes.groq(captured, calls.groq.length - 1);
+      }
+      throw new Error(`unexpected network call in test: ${url}`);
+    }),
+  );
+  return calls;
+}
+
+export const jsonResponse = (body: unknown, status = 200): Response =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
