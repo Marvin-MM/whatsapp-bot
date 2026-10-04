@@ -404,3 +404,5 @@ export const auditLog = pgTable(
     index('audit_log_entity_idx').on(t.entityType, t.entityId),
   ],
 );
+
+export * from './auth-schema';
