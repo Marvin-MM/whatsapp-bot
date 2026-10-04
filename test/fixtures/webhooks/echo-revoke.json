@@ -1,0 +1,34 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "smb_message_echoes",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "message_echoes": [
+              {
+                "id": "wamid.ECHO.REVOKE.1",
+                "from": "256700000001",
+                "to": "256700123456",
+                "timestamp": "1791100020",
+                "type": "text",
+                "revoked": true,
+                "context": {
+                  "from": "256700000001",
+                  "id": "wamid.ECHO.1"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

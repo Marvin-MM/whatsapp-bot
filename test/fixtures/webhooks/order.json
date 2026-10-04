@@ -1,0 +1,56 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "contacts": [
+              {
+                "wa_id": "256700123456",
+                "user_id": "UG.13491208655302741918",
+                "profile": {
+                  "name": "Amina Customer"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from": "256700123456",
+                "from_user_id": "UG.13491208655302741918",
+                "timestamp": "1791100000",
+                "id": "wamid.IN.ORD.1",
+                "type": "order",
+                "order": {
+                  "catalog_id": "cat1",
+                  "text": "Please deliver Friday",
+                  "product_items": [
+                    {
+                      "product_retailer_id": "sku-1",
+                      "quantity": 2,
+                      "item_price": 50000,
+                      "currency": "UGX"
+                    },
+                    {
+                      "product_retailer_id": "sku-2",
+                      "quantity": 1,
+                      "item_price": 20000,
+                      "currency": "UGX"
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

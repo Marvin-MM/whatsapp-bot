@@ -1,0 +1,23 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "account_reconnected",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "event": "ACCOUNT_RECONNECTED",
+            "reconnect_reason": "APP_REINSTALL",
+            "phone_number_id": "100000000000001"
+          }
+        }
+      ]
+    }
+  ]
+}

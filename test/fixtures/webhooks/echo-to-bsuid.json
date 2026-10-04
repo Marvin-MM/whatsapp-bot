@@ -1,0 +1,32 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "smb_message_echoes",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "message_echoes": [
+              {
+                "id": "wamid.ECHO.3",
+                "from": "256700000001",
+                "to_user_id": "UG.99999999999999999999",
+                "timestamp": "1791100022",
+                "type": "text",
+                "text": {
+                  "body": "Echo to a BSUID-only customer."
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

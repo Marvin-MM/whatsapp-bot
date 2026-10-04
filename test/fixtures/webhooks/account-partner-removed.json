@@ -1,0 +1,26 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "account_update",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "waba_id": "100000000000002",
+            "event": "PARTNER_REMOVED",
+            "waba_info": {
+              "name": "Fixture WABA",
+              "owner_business_id": "biz1"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

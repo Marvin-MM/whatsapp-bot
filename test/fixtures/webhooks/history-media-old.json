@@ -1,0 +1,40 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "history",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "request_id": "req_hist_1",
+            "history": [
+              {
+                "phase": 2,
+                "window": "day_14_90_media",
+                "messages": [
+                  {
+                    "id": "wamid.HIST.MEDIA.2",
+                    "from": "256700123456",
+                    "timestamp": "1785916000",
+                    "type": "image",
+                    "image": {
+                      "mime_type": "image/jpeg",
+                      "sha256": "99999999999999999999999999999999999999999999",
+                      "caption": "Older receipt photo"
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

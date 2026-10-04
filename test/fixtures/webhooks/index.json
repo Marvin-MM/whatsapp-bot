@@ -1,0 +1,238 @@
+{
+  "text-message.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "batch-multi.json": {
+    "confidence": "constructed",
+    "source": "built from the documented batching behaviour (multiple entries and changes per POST)"
+  },
+  "image-caption.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "voice-note.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "video.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "document.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "sticker.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "reaction.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "reaction-removed.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "location.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "contacts-shared.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "interactive-button-reply.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "interactive-list-reply.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "button.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "order.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "reply-context.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "unsupported.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures unsupportedMessageTypeFixture + SDK unsupported type"
+  },
+  "unknown-type.json": {
+    "confidence": "constructed",
+    "source": "a future message type the parser has never seen"
+  },
+  "group-message.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types (group_id)"
+  },
+  "edit-live.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures messageEditFixture"
+  },
+  "revoke-live.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures messageRevokeFixture"
+  },
+  "bsuid-only-sender.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types WebhookContact (wa_id optional) + WebhookMessageBase (from optional)"
+  },
+  "system-user-changed-number.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types WebhookSystemMessage"
+  },
+  "user-id-update.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types WebhookUserIdUpdateValue"
+  },
+  "user-preferences.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types WebhookUserPreferencesValue"
+  },
+  "status-sent.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "status-delivered.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "status-read.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "status-played.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "status-failed.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types"
+  },
+  "status-bsuid-recipient.json": {
+    "confidence": "sdk-types",
+    "source": "@whatsapp-cloudapi/types@5.0.1 webhook types (recipient_id omitted when sent to a BSUID)"
+  },
+  "echo-message-echoes.json": {
+    "confidence": "constructed",
+    "source": "official shape recalled from secondary documentation: message_echoes[] with from + to"
+  },
+  "echo-messages-shape.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures smbMessageEchoFixture (no `to`)"
+  },
+  "echo-to-bsuid.json": {
+    "confidence": "constructed",
+    "source": "constructed: recipient identified by BSUID only"
+  },
+  "echo-edit.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures (edit/revoke catalog)"
+  },
+  "echo-revoke.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures (edit/revoke catalog)"
+  },
+  "history-flat-phase1.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures historyPhase1Day01Fixture"
+  },
+  "history-threads.json": {
+    "confidence": "constructed",
+    "source": "recalled Meta history shape with threads[] and history_context; unconfirmed"
+  },
+  "history-duplicate-chunk.json": {
+    "confidence": "oss-fixture",
+    "source": "identical content to history-flat-phase1 with reordered keys is tested separately"
+  },
+  "history-media-recent.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures historyMediaWithAssetIdFixture"
+  },
+  "history-media-old.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures historyMediaMissingAssetIdAfterDay14Fixture"
+  },
+  "history-complete.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures historyPhase3Day90180Fixture"
+  },
+  "history-status-only.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures historyStatusOnlyChunkFixture"
+  },
+  "history-error.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures historySyncErrorFixture"
+  },
+  "history-group-excluded.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures historyGroupExcludedFixture"
+  },
+  "app-state-contact-add.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures smbAppStateSyncContactAddFixture"
+  },
+  "app-state-contact-remove.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures smbAppStateSyncContactRemoveFixture"
+  },
+  "app-state-error.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures smbAppStateSyncErrorFixture"
+  },
+  "account-partner-removed.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures accountUpdatePartnerRemovedFixture"
+  },
+  "account-offboarded.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures accountOffboardedFixture"
+  },
+  "account-reconnected.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures accountReconnectedFixture"
+  },
+  "quality-update.json": {
+    "confidence": "constructed",
+    "source": "constructed from the documented phone_number_quality_update field name"
+  },
+  "template-status-update.json": {
+    "confidence": "constructed",
+    "source": "constructed: a field we deliberately ignore"
+  },
+  "foreign-phone-number.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures unknownPhoneNumberFixture"
+  },
+  "unknown-field.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures malformedPayloadUnknownFieldFixture"
+  },
+  "malformed-messages-value.json": {
+    "confidence": "constructed",
+    "source": "a messages value whose message has no id"
+  },
+  "malformed-empty-entry.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures malformedPayloadEmptyEntryFixture"
+  },
+  "malformed-missing-object.json": {
+    "confidence": "oss-fixture",
+    "source": "@better-zap/fixtures malformedPayloadMissingObjectFixture"
+  },
+  "other-object-page.json": {
+    "confidence": "constructed",
+    "source": "a signed payload for a different Meta product"
+  }
+}

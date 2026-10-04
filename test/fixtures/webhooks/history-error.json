@@ -1,0 +1,32 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "history",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "request_id": "req_hist_err",
+            "errors": [
+              {
+                "code": 2593109,
+                "title": "History sync unavailable",
+                "message": "The customer opted out of history sync.",
+                "error_data": {
+                  "reason": "history_opt_out"
+                }
+              }
+            ],
+            "history": []
+          }
+        }
+      ]
+    }
+  ]
+}

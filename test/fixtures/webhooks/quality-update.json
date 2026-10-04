@@ -1,0 +1,18 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "phone_number_quality_update",
+          "value": {
+            "display_phone_number": "256700000001",
+            "event": "FLAGGED",
+            "current_limit": "TIER_1K"
+          }
+        }
+      ]
+    }
+  ]
+}

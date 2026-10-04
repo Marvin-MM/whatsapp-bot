@@ -1,0 +1,19 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "message_template_status_update",
+          "value": {
+            "event": "APPROVED",
+            "message_template_id": 1,
+            "message_template_name": "order_update",
+            "message_template_language": "en"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "user_preferences",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "user_preferences": [
+              {
+                "wa_id": "256700123456",
+                "user_id": "UG.13491208655302741918",
+                "detail": "User requested to stop marketing messages",
+                "category": "marketing_messages",
+                "value": "stop",
+                "timestamp": 1791100000
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

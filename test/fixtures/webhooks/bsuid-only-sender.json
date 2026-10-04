@@ -1,0 +1,40 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "contacts": [
+              {
+                "user_id": "UG.99999999999999999999",
+                "profile": {
+                  "name": "Kato K",
+                  "username": "kato_k"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from_user_id": "UG.99999999999999999999",
+                "id": "wamid.IN.BSUID.1",
+                "timestamp": "1791100000",
+                "type": "text",
+                "text": {
+                  "body": "Hi, is this the shop?"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

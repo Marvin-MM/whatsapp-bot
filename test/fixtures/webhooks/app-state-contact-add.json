@@ -1,0 +1,29 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "smb_app_state_sync",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "request_id": "req_appstate_1",
+            "contacts": [
+              {
+                "wa_id": "256700123456",
+                "profile": {
+                  "name": "Amina (saved name)"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "history",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "request_id": "req_hist_1",
+            "history": [
+              {
+                "phase": 1,
+                "excluded": {
+                  "group_chats": true
+                },
+                "messages": [
+                  {
+                    "id": "wamid.HIST.IND.1",
+                    "from": "256700654321",
+                    "timestamp": "1790668000",
+                    "type": "text",
+                    "text": {
+                      "body": "This one-to-one message is included."
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

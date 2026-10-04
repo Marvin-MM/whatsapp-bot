@@ -1,0 +1,58 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "history",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "request_id": "req_hist_1",
+            "history": [
+              {
+                "metadata": {
+                  "phase": 1,
+                  "chunk_order": 1,
+                  "progress": 10
+                },
+                "threads": [
+                  {
+                    "id": "256700123456",
+                    "messages": [
+                      {
+                        "id": "wamid.HIST.T1",
+                        "from": "256700123456",
+                        "timestamp": "1788508000",
+                        "type": "text",
+                        "text": {
+                          "body": "Do you deliver to Entebbe?"
+                        }
+                      },
+                      {
+                        "id": "wamid.HIST.T2",
+                        "from": "256700000001",
+                        "timestamp": "1788508120",
+                        "type": "text",
+                        "text": {
+                          "body": "Yes, 10k delivery."
+                        },
+                        "history_context": {
+                          "status": "READ"
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

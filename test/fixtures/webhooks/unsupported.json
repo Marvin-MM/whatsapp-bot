@@ -1,0 +1,48 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "contacts": [
+              {
+                "wa_id": "256700123456",
+                "user_id": "UG.13491208655302741918",
+                "profile": {
+                  "name": "Amina Customer"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from": "256700123456",
+                "from_user_id": "UG.13491208655302741918",
+                "timestamp": "1791100000",
+                "id": "wamid.IN.UNS.1",
+                "type": "unsupported",
+                "unsupported": {
+                  "type": "poll"
+                },
+                "errors": [
+                  {
+                    "code": 131051,
+                    "title": "Unsupported message type",
+                    "message": "The message type is not supported"
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

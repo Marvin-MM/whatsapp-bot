@@ -1,0 +1,127 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "contacts": [
+              {
+                "wa_id": "256700123456",
+                "user_id": "UG.13491208655302741918",
+                "profile": {
+                  "name": "Amina Customer"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from": "256700123456",
+                "from_user_id": "UG.13491208655302741918",
+                "timestamp": "1791100000",
+                "id": "wamid.BATCH.1",
+                "type": "text",
+                "text": {
+                  "body": "Hi"
+                }
+              },
+              {
+                "from": "256700123456",
+                "from_user_id": "UG.13491208655302741918",
+                "timestamp": "1791100002",
+                "id": "wamid.BATCH.2",
+                "type": "text",
+                "text": {
+                  "body": "Are you open today?"
+                }
+              }
+            ],
+            "statuses": [
+              {
+                "id": "wamid.OUT.BATCH.1",
+                "status": "delivered",
+                "timestamp": "1791100001",
+                "recipient_id": "256700123456",
+                "recipient_user_id": "UG.13491208655302741918"
+              }
+            ]
+          }
+        },
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "contacts": [
+              {
+                "wa_id": "256700654321",
+                "user_id": "UG.22222222222222222222",
+                "profile": {
+                  "name": "Brian Buyer"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from": "256700654321",
+                "from_user_id": "UG.22222222222222222222",
+                "timestamp": "1791100003",
+                "id": "wamid.BATCH.3",
+                "type": "text",
+                "text": {
+                  "body": "Price of the red shoes?"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "100000000000002",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "256700000001",
+              "phone_number_id": "100000000000001"
+            },
+            "contacts": [
+              {
+                "wa_id": "256700123456",
+                "user_id": "UG.13491208655302741918",
+                "profile": {
+                  "name": "Amina Customer"
+                }
+              }
+            ],
+            "messages": [
+              {
+                "from": "256700123456",
+                "from_user_id": "UG.13491208655302741918",
+                "timestamp": "1791100009",
+                "id": "wamid.BATCH.4",
+                "type": "text",
+                "text": {
+                  "body": "Thanks"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
