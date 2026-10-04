@@ -1,0 +1,29 @@
+# dependencies
+/node_modules
+.pnpm-store
+
+# next / build output
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# env: only .env.example is committed
+.env
+.env.*
+!.env.example
+
+# runtime data
+/data/
+/backups/
+
+# eval reports are local; keep the folder
+/eval/results/*
+!/eval/results/.gitkeep
+
+# logs / OS / editor
+*.log
+.DS_Store
+.vscode/
+.idea/
+coverage/
