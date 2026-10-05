@@ -6,9 +6,25 @@ import { type Tx, getDb } from '@/lib/db';
 import { logger } from '@/lib/logger';
 
 export interface ActionError {
-  code: 'unauthorized' | 'invalid_input' | 'failed';
+  /** `refused`: the action understood the request and deliberately did not do it (a send pre-check failed): `reason` says why. */
+  code: 'unauthorized' | 'invalid_input' | 'refused' | 'failed';
   message: string;
   fieldErrors?: Record<string, string[]>;
+  reason?: string;
+}
+
+/**
+ * Thrown inside a handler to REFUSE the request. The transaction rolls back (nothing is written, not even the audit entry),
+ * and the caller gets `{ ok: false, error: { code: 'refused', reason, message } }` with a message the owner can act on.
+ */
+export class ActionRefusal extends Error {
+  constructor(
+    readonly reason: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'ActionRefusal';
+  }
 }
 
 /** Every server action returns this; it never throws to the client. */
@@ -22,7 +38,16 @@ export interface OwnerActionConfig<S extends z.ZodType, R> {
    * Runs inside one transaction with the audit write: a thrown error rolls back both.
    * Must return the audit entry for the mutation (read-only queries do not use this wrapper).
    */
-  handler: (ctx: { input: z.output<S>; owner: OwnerSession; tx: Tx }) => Promise<{ data: R; audit: Omit<AuditEntry, 'actor'> }>;
+  handler: (ctx: { input: z.output<S>; owner: OwnerSession; tx: Tx }) => Promise<{
+    data: R;
+    audit: Omit<AuditEntry, 'actor'>;
+    /**
+     * Runs only AFTER the transaction has committed (enqueue a job, publish an event). It never runs on a rollback, and if it
+     * throws the action still succeeds: the change is already committed, so the failure is logged and a safety net (for sends:
+     * the alerts-scan re-enqueue) picks it up rather than telling the owner "failed" about something that happened.
+     */
+    afterCommit?: () => Promise<void>;
+  }>;
 }
 
 const UNAUTHORIZED: ActionResult<never> = {
@@ -58,18 +83,32 @@ export function createOwnerAction(getHeaders: () => Promise<Headers>) {
         };
       }
 
+      let afterCommit: (() => Promise<void>) | undefined;
+      let data: R;
       try {
-        const data = await getDb().transaction(async (tx) => {
+        data = await getDb().transaction(async (tx) => {
           const result = await config.handler({ input: parsed.data, owner: check.owner, tx });
           await writeAudit(tx, { actor: 'owner', ...result.audit });
+          afterCommit = result.afterCommit;
           return result.data;
         });
-        return { ok: true, data };
       } catch (error) {
+        if (error instanceof ActionRefusal) {
+          return { ok: false, error: { code: 'refused', reason: error.reason, message: error.message } };
+        }
         // Never leak internals (or message bodies) to the client; the log has the error name only.
         logger.error({ action: config.name, error: error instanceof Error ? error.name : 'unknown' }, 'owner action failed');
         return { ok: false, error: { code: 'failed', message: 'Something went wrong. Nothing was changed.' } };
       }
+
+      if (afterCommit) {
+        try {
+          await afterCommit();
+        } catch (error) {
+          logger.error({ action: config.name, error: error instanceof Error ? error.name : 'unknown' }, 'after-commit hook failed');
+        }
+      }
+      return { ok: true, data };
     };
   };
 }

@@ -1,7 +1,8 @@
 import { eq } from 'drizzle-orm';
 import type { Sql } from 'postgres';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createOwnerAction } from '@/lib/actions/owner-action-core';
+import { z } from 'zod';
+import { ActionRefusal, createOwnerAction } from '@/lib/actions/owner-action-core';
 import { getAuth } from '@/lib/auth';
 import { checkOwner } from '@/lib/auth-guard';
 import { getDb } from '@/lib/db';
@@ -248,6 +249,88 @@ describe('ownerAction wrapper', () => {
     expect(JSON.stringify(result)).not.toContain('hunter2');
     expect(await db().select().from(settings)).toHaveLength(0);
     expect(await db().select().from(auditLog).where(eq(auditLog.actor, 'owner'))).toHaveLength(0);
+  });
+});
+
+describe('ownerAction: refusals and after-commit hooks', () => {
+  const schema = z.object({ name: z.enum(['ai_paused', 'sending_paused', 'autopilot_paused']), value: z.boolean() });
+
+  it('a refusal rolls back the mutation and the audit entry and tells the owner WHY (code refused, reason, message)', async () => {
+    const owner = await createEnrolledOwner();
+    const action = createOwnerAction(async () => headersWith(owner.cookie))({
+      name: 'test.refuse',
+      schema,
+      handler: async ({ input, tx }) => {
+        await applyKillSwitch(tx, input);
+        throw new ActionRefusal('window_closed', 'The 24-hour window has closed.');
+      },
+    });
+
+    const result = await action({ name: 'ai_paused', value: true });
+    expect(result).toEqual({ ok: false, error: { code: 'refused', reason: 'window_closed', message: 'The 24-hour window has closed.' } });
+    expect(await db().select().from(settings)).toHaveLength(0);
+    expect(await db().select().from(auditLog).where(eq(auditLog.actor, 'owner'))).toHaveLength(0);
+  });
+
+  it('afterCommit runs once, AFTER the transaction committed (it can see the change)', async () => {
+    const owner = await createEnrolledOwner();
+    let seenInHook: boolean | undefined;
+    const action = createOwnerAction(async () => headersWith(owner.cookie))({
+      name: 'test.after',
+      schema,
+      handler: async ({ input, tx }) => {
+        const change = await applyKillSwitch(tx, input);
+        return {
+          data: change,
+          audit: { action: 'settings.kill_switch', entityType: 'settings', entityId: '1', metadata: { ...change } },
+          afterCommit: async () => {
+            // A different connection: it only sees the row if the transaction has committed.
+            const [row] = await admin`SELECT ai_paused FROM settings`;
+            seenInHook = row?.ai_paused as boolean | undefined;
+          },
+        };
+      },
+    });
+    expect(await action({ name: 'ai_paused', value: true })).toMatchObject({ ok: true });
+    expect(seenInHook).toBe(true);
+  });
+
+  it('afterCommit NEVER runs when the transaction rolls back (here: the audit write fails after the handler succeeded)', async () => {
+    const owner = await createEnrolledOwner();
+    const hook = vi.fn(async () => undefined);
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const action = createOwnerAction(async () => headersWith(owner.cookie))({
+      name: 'test.never',
+      schema,
+      handler: async ({ input, tx }) => {
+        const change = await applyKillSwitch(tx, input);
+        return { data: change, audit: { action: 'settings.kill_switch', entityType: 'settings', entityId: '1', metadata: circular }, afterCommit: hook };
+      },
+    });
+    expect(await action({ name: 'ai_paused', value: true })).toMatchObject({ ok: false, error: { code: 'failed' } });
+    expect(hook).not.toHaveBeenCalled();
+    expect(await db().select().from(settings)).toHaveLength(0);
+  });
+
+  it('a failing afterCommit does not turn a committed change into an error', async () => {
+    const owner = await createEnrolledOwner();
+    const action = createOwnerAction(async () => headersWith(owner.cookie))({
+      name: 'test.hookfail',
+      schema,
+      handler: async ({ input, tx }) => {
+        const change = await applyKillSwitch(tx, input);
+        return {
+          data: change,
+          audit: { action: 'settings.kill_switch', entityType: 'settings', entityId: '1', metadata: { ...change } },
+          afterCommit: async () => {
+            throw new Error('redis down');
+          },
+        };
+      },
+    });
+    expect(await action({ name: 'sending_paused', value: true })).toMatchObject({ ok: true, data: { name: 'sending_paused', value: true } });
+    expect((await db().select().from(settings))[0]?.sendingPaused).toBe(true);
   });
 });
 

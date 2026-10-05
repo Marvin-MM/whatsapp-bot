@@ -8,12 +8,22 @@ export interface NetworkRoutes {
   graphInfo?: (mediaId: string) => Response | Promise<Response>;
   /** `GET https://lookaside.fbsbx.com/...` (the file itself) */
   download?: (url: string) => Response | Promise<Response>;
+  /** `POST https://graph.facebook.com/{version}/{phone-number-id}/messages`: may throw to simulate a network error. */
+  graphSend?: (request: SentRequest, index: number) => Response | Promise<Response>;
   /** Anything under https://api.groq.com/ */
   groq?: GroqHandler;
 }
 
+export interface SentRequest {
+  url: string;
+  headers: Record<string, string>;
+  payload: Record<string, unknown>;
+}
+
 export interface NetworkCalls {
   graph: string[];
+  /** Every POST to the send endpoint, in order. */
+  sends: SentRequest[];
   download: string[];
   groq: CapturedRequest[];
 }
@@ -23,11 +33,20 @@ export interface NetworkCalls {
  * only thing mocked. Any other host is a test bug and throws instead of leaving the machine.
  */
 export function stubNetwork(routes: NetworkRoutes): NetworkCalls {
-  const calls: NetworkCalls = { graph: [], download: [], groq: [] };
+  const calls: NetworkCalls = { graph: [], sends: [], download: [], groq: [] };
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.startsWith('https://graph.facebook.com/') && init?.method === 'POST' && new URL(url).pathname.endsWith('/messages')) {
+        const headers: Record<string, string> = {};
+        new Headers(init.headers).forEach((value, key) => (headers[key] = value));
+        const payload = JSON.parse(typeof init.body === 'string' ? init.body : '{}') as Record<string, unknown>;
+        const request: SentRequest = { url, headers, payload };
+        calls.sends.push(request);
+        if (!routes.graphSend) throw new Error('no graphSend route in this test');
+        return routes.graphSend(request, calls.sends.length - 1);
+      }
       if (url.startsWith('https://graph.facebook.com/')) {
         const id = decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '');
         calls.graph.push(id);
