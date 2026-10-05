@@ -184,8 +184,9 @@ page): the app has no built-in prices, so without it you see tokens, never an in
 
 ## Autopilot
 
-Autopilot is **off**, and the app will not let you turn it on until it has measured itself against *your* replies. Two things make it safe to leave
-approval mode the default for ever: the gate below, and the fact that every reply it sends waits a few minutes where you can cancel it.
+Autopilot is **off**, and the app will not let you turn it on until it has measured itself against *your* replies. What keeps it safe is the gate, the
+rules and the checking model below. The countdown that lets you cancel is a second chance, not a guarantee: it only helps if you are looking at your
+phone within the delay, so do not count on it for anything the rules should have caught.
 
 **The gate.** Settings -> Autopilot shows nine checks with their numbers, live: the latest evaluation (`pnpm eval:drafts`) must be at most 30 days old,
 use at least 50 of your replies, have been run with the prompt, model and style guide in use *now*, have a median edit distance at or below
