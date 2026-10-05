@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 import { setKillSwitch } from '@/actions/settings';
@@ -11,7 +12,7 @@ interface Props {
   autopilotPaused: boolean;
 }
 
-function Switch({ checked, onChange, disabled, label, alarming = true }: { checked: boolean; onChange: (next: boolean) => void; disabled?: boolean; label: string; alarming?: boolean }) {
+function Switch({ checked, onChange, disabled, label }: { checked: boolean; onChange: (next: boolean) => void; disabled?: boolean; label: string }) {
   return (
     <button
       type="button"
@@ -22,7 +23,7 @@ function Switch({ checked, onChange, disabled, label, alarming = true }: { check
       onClick={() => onChange(!checked)}
       className={cn(
         'relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-        checked ? (alarming ? 'border-destructive/50 bg-destructive' : 'border-border bg-foreground/60') : 'border-border bg-muted',
+        checked ? 'border-destructive/50 bg-destructive' : 'border-border bg-muted',
       )}
     >
       <span aria-hidden="true" className={cn('inline-block h-5 w-5 rounded-full bg-background shadow transition-transform', checked ? 'translate-x-6' : 'translate-x-1')} />
@@ -32,7 +33,8 @@ function Switch({ checked, onChange, disabled, label, alarming = true }: { check
 
 /**
  * The kill switches. A switch that is ON means "paused": the dangerous direction is the highlighted one, and it takes effect on the
- * very next send (the worker re-checks the switch immediately before calling Meta).
+ * very next send (the worker re-checks the switch immediately before calling Meta). Autopilot is not a switch here: turning it on is gated by
+ * checks that need their numbers on screen, so it lives on its own page.
  */
 export function KillSwitchControls({ aiPaused, sendingPaused, autopilotPaused }: Props) {
   const router = useRouter();
@@ -73,11 +75,13 @@ export function KillSwitchControls({ aiPaused, sendingPaused, autopilotPaused }:
           <p className="text-sm font-medium">Autopilot</p>
           <p className="text-sm text-muted-foreground">
             {autopilotPaused
-              ? 'Off. Every reply waits for your approval. Autopilot cannot be turned on until it has proven itself on your real replies.'
-              : 'On: some replies are sent without your approval.'}
+              ? 'Off. Every reply waits for your approval. It can be turned on only after it has proven itself on your real replies.'
+              : 'On: replies in the conversations you chose may be sent without your approval.'}
           </p>
         </div>
-        <Switch checked={autopilotPaused} disabled alarming={false} label="Autopilot paused" onChange={() => undefined} />
+        <Link href="/settings/autopilot" className="inline-flex h-9 shrink-0 items-center rounded-md border border-input bg-card px-3 text-sm hover:bg-muted">
+          {autopilotPaused ? 'See the checks' : 'Manage'}
+        </Link>
       </div>
       {error ? (
         <p role="alert" className="text-sm text-destructive">

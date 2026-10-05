@@ -189,6 +189,79 @@ export async function getEditDistance(db: Db, range: Range): Promise<{ byDay: Ed
   };
 }
 
+// -------------------------------------------------------------------------------------------------------------------------- autopilot
+
+export interface AutopilotDay {
+  day: string;
+  /** Automatic replies sent (the day the message was queued). */
+  sent: number;
+  /** Drafts the autopilot did NOT send and handed to the owner's approval queue (the day the draft was written). */
+  routed: number;
+  /** "ok" / "thanks" drafts the autopilot closed without sending anything. */
+  silent: number;
+}
+
+export interface AutopilotAnalytics {
+  byDay: AutopilotDay[];
+  totals: { sent: number; routed: number; silent: number; cancelled: number; demoted: number; markedBad: number };
+  /** Why drafts were routed to approval, most frequent first (reason codes: see `ROUTE_REASON_TEXT`). */
+  topReasons: Array<{ reason: string; count: number }>;
+}
+
+const TOP_REASONS = 8;
+
+/**
+ * Autopilot sent versus routed to approval (spec 12), with the reasons. "Routed" means the autopilot looked at a draft in a conversation on autopilot
+ * and did not send it (a rule failed, the verifier failed, the re-check failed): the decision is stored on the draft. A draft the owner cancelled
+ * during its countdown is NOT routed (its decision was a pass; the Cancel is counted on its own), and an "ok" the autopilot closed is "silent".
+ */
+export async function getAutopilot(db: Db, range: Range): Promise<AutopilotAnalytics> {
+  const since = range.since.toISOString();
+  const until = range.until.toISOString();
+  const sent = await db.execute<{ day: string; n: number }>(sql`
+    SELECT ${DAY('occurred_at', range.timeZone)} AS day, count(*)::int AS n
+    FROM messages
+    WHERE direction = 'outbound' AND provenance = 'ai_autopilot' AND status <> 'failed' AND occurred_at >= ${since}::timestamptz AND occurred_at <= ${until}::timestamptz
+    GROUP BY 1`);
+  const decided = await db.execute<{ day: string; routed: number; silent: number }>(sql`
+    SELECT ${DAY('created_at', range.timeZone)} AS day,
+           (count(*) FILTER (WHERE (autopilot_decision->>'eligible')::boolean = false AND autopilot_decision->'reasons' <> '["no_reply_needed"]'::jsonb))::int AS routed,
+           (count(*) FILTER (WHERE autopilot_decision->'reasons' = '["no_reply_needed"]'::jsonb))::int AS silent
+    FROM drafts
+    WHERE autopilot_decision IS NOT NULL AND created_at >= ${since}::timestamptz AND created_at <= ${until}::timestamptz
+    GROUP BY 1`);
+  const reasons = await db.execute<{ reason: string; n: number }>(sql`
+    SELECT reason, count(*)::int AS n
+    FROM drafts, jsonb_array_elements_text(autopilot_decision->'reasons') AS reason
+    WHERE autopilot_decision IS NOT NULL AND (autopilot_decision->>'eligible')::boolean = false AND reason <> 'no_reply_needed'
+      AND created_at >= ${since}::timestamptz AND created_at <= ${until}::timestamptz
+    GROUP BY reason ORDER BY n DESC, reason LIMIT ${TOP_REASONS}`);
+  const audited = await db.execute<{ action: string; n: number }>(sql`
+    SELECT action, count(*)::int AS n FROM audit_log
+    WHERE action IN ('autopilot.cancel', 'autopilot.demote') AND created_at >= ${since}::timestamptz AND created_at <= ${until}::timestamptz
+    GROUP BY action`);
+  const [marked] = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM messages WHERE marked_bad_at >= ${since}::timestamptz AND marked_bad_at <= ${until}::timestamptz`);
+
+  const days = new Map<string, AutopilotDay>();
+  const get = (day: string) => days.get(day) ?? { day, sent: 0, routed: 0, silent: 0 };
+  for (const row of sent) days.set(row.day, { ...get(row.day), sent: row.n });
+  for (const row of decided) days.set(row.day, { ...get(row.day), routed: row.routed, silent: row.silent });
+  const byDay = fill(range, [...days.values()], (day) => ({ day, sent: 0, routed: 0, silent: 0 }));
+  const count = (action: string) => audited.find((row) => row.action === action)?.n ?? 0;
+  return {
+    byDay,
+    totals: {
+      sent: byDay.reduce((sum, day) => sum + day.sent, 0),
+      routed: byDay.reduce((sum, day) => sum + day.routed, 0),
+      silent: byDay.reduce((sum, day) => sum + day.silent, 0),
+      cancelled: count('autopilot.cancel'),
+      demoted: count('autopilot.demote'),
+      markedBad: marked?.n ?? 0,
+    },
+    topReasons: reasons.map((row) => ({ reason: row.reason, count: row.n })),
+  };
+}
+
 // ------------------------------------------------------------------------------------------------------------------------- tasks
 
 export interface TaskTypeRow {
@@ -302,17 +375,19 @@ export interface Analytics {
   editDistance: Awaited<ReturnType<typeof getEditDistance>>;
   tasks: TaskTypeRow[];
   ai: AiUsage;
+  autopilot: AutopilotAnalytics;
 }
 
 export async function getAnalytics(db: Db, options: { now: Date; days: RangeDays; timeZone: string; prices: AiPriceList | null }): Promise<Analytics> {
   const range = buildRange(options.now, options.days, options.timeZone);
-  const [volume, firstResponse, drafts, editDistance, tasks, ai] = await Promise.all([
+  const [volume, firstResponse, drafts, editDistance, tasks, ai, autopilot] = await Promise.all([
     getVolume(db, range),
     getFirstResponse(db, range),
     getDraftOutcomes(db, range),
     getEditDistance(db, range),
     getTasksByType(db, range),
     getAiUsage(db, range, options.prices),
+    getAutopilot(db, range),
   ]);
-  return { range, volume, firstResponse, drafts, editDistance, tasks, ai };
+  return { range, volume, firstResponse, drafts, editDistance, tasks, ai, autopilot };
 }

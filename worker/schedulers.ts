@@ -8,7 +8,7 @@ export interface SchedulerDefinition {
 
 /**
  * Recurring jobs on the `scheduled` queue. Phases append here: sweep-webhook-events and alerts-scan every 5 min, token-health
- * and purge-payloads daily at quiet hours in the owner's time zone, autopilot-digest daily in the owner's evening (Phase 7).
+ * and purge-payloads daily at quiet hours in the owner's time zone, autopilot-digest daily at 20:00 in the owner's time zone.
  */
 export function schedulerDefinitions(timeZone: string): readonly SchedulerDefinition[] {
   return [
@@ -16,6 +16,7 @@ export function schedulerDefinitions(timeZone: string): readonly SchedulerDefini
     { id: 'alerts-scan', repeat: { every: 5 * 60 * 1000 } },
     { id: 'token-health', repeat: { pattern: '10 6 * * *', tz: timeZone } },
     { id: 'purge-payloads', repeat: { pattern: '30 3 * * *', tz: timeZone } },
+    { id: 'autopilot-digest', repeat: { pattern: '0 20 * * *', tz: timeZone } },
   ];
 }
 

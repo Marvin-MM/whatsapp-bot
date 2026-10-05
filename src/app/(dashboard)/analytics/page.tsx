@@ -2,9 +2,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { StackedBar } from '@/components/analytics/stacked-bar';
 import { ChartCard, Figure } from '@/components/analytics/chart-card';
-import { EditDistanceChart, FirstResponseChart, OutcomesChart, TokensChart, VolumeChart } from '@/components/analytics/charts';
+import { AutopilotChart, EditDistanceChart, FirstResponseChart, OutcomesChart, TokensChart, VolumeChart } from '@/components/analytics/charts';
 import { EmptyState } from '@/components/shared/empty-state';
 import { PageHeader } from '@/components/shared/page-header';
+import { ROUTE_REASON_TEXT, type RouteReason } from '@/lib/autopilot/policy';
 import { getDb } from '@/lib/db';
 import { getEnv, readAiPrices } from '@/lib/env';
 import { RANGE_DAYS, type RangeDays, getAnalytics } from '@/lib/metrics/analytics';
@@ -26,7 +27,8 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
   const env = getEnv();
   const data = await getAnalytics(getDb(), { now: new Date(), days, timeZone: env.OWNER_TIMEZONE, prices: readAiPrices(env.AI_PRICE_PER_MTOK_JSON) });
 
-  const { volume, firstResponse, drafts, editDistance, tasks, ai } = data;
+  const { volume, firstResponse, drafts, editDistance, tasks, ai, autopilot } = data;
+  const autopilotActive = autopilot.totals.sent + autopilot.totals.routed + autopilot.totals.silent > 0;
   const anyMessages = volume.some((day) => day.inbound + day.outbound > 0);
   const anyDrafts = Object.values(drafts.totals).some((n) => n > 0);
   const sentTotal = drafts.totals.unedited + drafts.totals.edited + drafts.totals.autopilot;
@@ -176,9 +178,36 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
             </ChartCard>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            Autopilot sent versus sent for your approval appears here once autopilot is used (it is off). {sentTotal === 0 ? '' : `In this period: ${drafts.totals.autopilot} sent by autopilot.`}
-          </p>
+          <ChartCard
+            title="Autopilot: sent or handed to you"
+            definition="For conversations on autopilot: replies it sent by itself, drafts it looked at and handed to your approval queue (with the reason), and “ok” / “thanks” messages it closed without a reply. A reply you cancelled during its countdown is counted under Cancelled, not under handed to you."
+            empty={!autopilotActive ? `Autopilot did nothing in the last ${days} days. It is off until its checks pass (Settings → Autopilot).` : undefined}
+            table={{
+              columns: ['Day', 'Sent', 'Handed to you', 'Closed'],
+              rows: autopilot.byDay.map((d) => [shortDay(d.day), d.sent, d.routed, d.silent]),
+            }}
+          >
+            <dl className="mb-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
+              <Figure label="Sent" value={String(autopilot.totals.sent)} hint="by autopilot" />
+              <Figure label="Handed to you" value={String(autopilot.totals.routed)} hint="not sent" />
+              <Figure label="Cancelled" value={String(autopilot.totals.cancelled)} hint="by you, in the countdown" />
+              <Figure label="Taken off autopilot" value={String(autopilot.totals.demoted)} hint="complaint, “mark bad”" />
+              <Figure label="Marked bad" value={String(autopilot.totals.markedBad)} hint="replies you flagged" />
+            </dl>
+            <AutopilotChart data={autopilot.byDay} />
+            {autopilot.topReasons.length > 0 ? (
+              <div className="mt-3">
+                <h3 className="text-sm font-medium">Why drafts were handed to you</h3>
+                <ul className="mt-1 space-y-0.5 text-sm text-muted-foreground">
+                  {autopilot.topReasons.map((item) => (
+                    <li key={item.reason}>
+                      <span className="tabular-nums">{item.count}</span> · {item.reason in ROUTE_REASON_TEXT ? ROUTE_REASON_TEXT[item.reason as RouteReason] : item.reason.replaceAll('_', ' ')}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </ChartCard>
         </div>
       )}
     </>

@@ -71,6 +71,12 @@ export async function countOpenDrafts(db: Db): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
+/** Drafts the autopilot has decided to send and is counting down: they go out by themselves unless the owner cancels them. */
+export async function countScheduledDrafts(db: Db): Promise<number> {
+  const rows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM drafts WHERE status = 'scheduled'`);
+  return rows[0]?.n ?? 0;
+}
+
 /** The conversation's open draft, if any (the thread links to it instead of offering to make another). Newest wins. */
 export async function getOpenDraftId(db: Db, conversationId: string): Promise<string | null> {
   const rows = await db.execute<{ id: string }>(sql`
@@ -123,6 +129,10 @@ export interface DraftDetail {
   /** The customer wrote again after this draft's messages: sending needs an explicit "send anyway". */
   stale: boolean;
   stats: IntentStats;
+  /** When the autopilot will send it (status `scheduled`), else null. */
+  scheduledSendAt: Date | null;
+  /** Why the autopilot did NOT send this draft (reason codes), for a draft it looked at and handed to the owner; null when it did not look or it passed. */
+  autopilotReasons: string[] | null;
 }
 
 interface DetailRow extends Record<string, unknown> {
@@ -141,6 +151,8 @@ interface DetailRow extends Record<string, unknown> {
   style_guide_version: number | null;
   fewshot_message_ids: string[];
   trigger_message_ids: string[];
+  scheduled_send_at: string | Date | null;
+  autopilot_decision: { eligible?: boolean; reasons?: string[] } | null;
   created_at: string | Date;
   window_expires_at: string | Date | null;
   display_name: string | null;
@@ -182,5 +194,7 @@ export async function getDraftDetail(db: Db, draftId: string, now: Date = new Da
     createdAt: toDate(row.created_at),
     stale: row.status === 'pending' || row.status === 'scheduled' ? await isDraftStale(db, row.conversation_id, row.trigger_message_ids) : false,
     stats: await getIntentStats(db, row.intent, now),
+    scheduledSendAt: row.scheduled_send_at === null ? null : toDate(row.scheduled_send_at),
+    autopilotReasons: row.autopilot_decision && row.autopilot_decision.eligible === false && Array.isArray(row.autopilot_decision.reasons) ? row.autopilot_decision.reasons : null,
   };
 }

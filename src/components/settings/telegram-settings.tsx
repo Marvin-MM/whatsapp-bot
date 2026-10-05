@@ -62,7 +62,7 @@ export function TelegramSettings({ notifyTelegram, quietHours, chatIdMasked }: P
           <Input id="quiet-end" type="time" value={end} onChange={(event) => setEnd(event.target.value)} />
         </div>
       </div>
-      <p className="text-xs text-muted-foreground">During quiet hours (your local time) only critical alerts are sent. Everything still appears here.</p>
+      <p className="text-xs text-muted-foreground">During quiet hours (your local time) only critical alerts are sent, and autopilot sends nothing. Everything still appears here.</p>
       <div className="flex flex-wrap gap-2">
         <Button type="button" onClick={save} disabled={pending}>
           Save

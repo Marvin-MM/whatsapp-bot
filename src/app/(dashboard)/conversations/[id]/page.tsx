@@ -8,8 +8,11 @@ import { ConversationStatusBadge } from '@/components/conversations/status-badge
 import { ThreadScroller } from '@/components/conversations/thread-scroller';
 import { WindowBadge, WindowDetail } from '@/components/conversations/window-badge';
 import { DraftPrompt } from '@/components/approvals/draft-prompt';
+import { ReplyModePanel } from '@/components/conversations/reply-mode-panel';
 import { ConversationPanel } from '@/components/tasks/conversation-panel';
 import { Composer } from '@/components/send/composer';
+import { getAutopilotStatus } from '@/lib/autopilot/status';
+import { formatFullTimestamp } from '@/lib/conversations/format';
 import { groupByDay } from '@/lib/conversations/group';
 import { isUuid, parseThreadParams } from '@/lib/conversations/params';
 import { getThread } from '@/lib/conversations/queries';
@@ -45,6 +48,7 @@ export default async function ConversationPage({
   const openDraftId = await getOpenDraftId(db, id);
   const canRequestDraft = openDraftId === null && (await loadUnanswered(db, id)).length > 0;
   const conversationTasks = await listConversationTasks(db, id);
+  const autopilot = await getAutopilotStatus(db, now);
   const last = messages.at(-1);
 
   const rows = groupByDay(messages, now, timeZone);
@@ -78,6 +82,14 @@ export default async function ConversationPage({
         </div>
         <WindowDetail expiresAt={conversation.windowExpiresAt} serverNow={now} className="mt-1 hidden text-xs text-muted-foreground sm:block" />
       </header>
+
+      <ReplyModePanel
+        conversationId={conversation.id}
+        mode={conversation.replyMode}
+        until={conversation.autopilotUntil?.toISOString() ?? null}
+        untilLabel={conversation.autopilotUntil ? formatFullTimestamp(conversation.autopilotUntil, timeZone) : null}
+        status={{ paused: autopilot.paused, eligible: autopilot.eligible, failed: autopilot.failed.map((check) => ({ title: check.title, detail: check.detail })) }}
+      />
 
       <ConversationPanel
         conversationId={conversation.id}

@@ -113,3 +113,26 @@ export function TokensChart({ data }: { data: Array<{ day: string; inputTokens: 
     </ResponsiveContainer>
   );
 }
+
+const AUTOPILOT_STYLE = [
+  { key: 'sent', name: 'Sent by autopilot', color: 'var(--color-primary)' },
+  { key: 'routed', name: 'Handed to you', color: 'var(--color-warning)' },
+  { key: 'silent', name: 'Closed without a reply', color: 'var(--color-border)' },
+] as const;
+
+export function AutopilotChart({ data }: { data: Array<{ day: string; sent: number; routed: number; silent: number }> }) {
+  return (
+    <ResponsiveContainer width="100%" height={HEIGHT}>
+      <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+        <CartesianGrid stroke={GRID} vertical={false} />
+        {xAxis}
+        <YAxis allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} width={40} />
+        <Tooltip {...TOOLTIP} labelFormatter={(label) => shortDay(String(label))} cursor={{ fill: 'var(--color-muted)' }} />
+        <Legend wrapperStyle={{ fontSize: 12 }} />
+        {AUTOPILOT_STYLE.map((item) => (
+          <Bar key={item.key} dataKey={item.key} name={item.name} stackId="autopilot" fill={item.color} isAnimationActive={false} />
+        ))}
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}

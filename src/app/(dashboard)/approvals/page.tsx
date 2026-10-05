@@ -33,6 +33,9 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
   const now = new Date();
   const timeZone = getEnv().OWNER_TIMEZONE;
   const queue = await listApprovalQueue(db);
+  const shell = await getShellState();
+  // True only while autopilot is off: switched on, some replies go out after a countdown the owner can cancel.
+  const approvalOnly = shell.autopilotPaused;
 
   // `?d=` picks a draft; without it (or with one that does not exist) the oldest waiting draft is shown.
   const detail = (requested ? await getDraftDetail(db, requested, now) : null) ?? (queue[0] ? await getDraftDetail(db, queue[0].id, now) : null);
@@ -50,7 +53,11 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
         <Flash />
         <EmptyState
           title="No drafts waiting"
-          description="When a customer writes, a draft in your style appears here for you to approve. Nothing is ever sent without your approval."
+          description={
+            approvalOnly
+              ? 'When a customer writes, a draft in your style appears here for you to approve. Nothing is ever sent without your approval.'
+              : 'When a customer writes, a draft in your style appears here for you to approve. Replies on autopilot are sent after a countdown you can cancel.'
+          }
           action={
             <Link href="/conversations?filter=needs_reply" className="text-sm underline underline-offset-4">
               See customers waiting for a reply
@@ -67,7 +74,6 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
   const nextId = index >= 0 ? (queue[index + 1]?.id ?? null) : (queue.find((item) => item.id !== detail?.id)?.id ?? null);
 
   const thread = detail ? await getThread(db, detail.conversationId, { limit: RECENT_MESSAGES }) : null;
-  const shell = await getShellState();
   const triggers = new Set(detail?.triggerMessageIds ?? []);
   const rows = thread ? groupByDay(thread.messages, now, timeZone) : [];
   // What the customer is waiting for, for the collapsed thread on a phone.
@@ -75,7 +81,15 @@ export default async function ApprovalsPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <PageHeader title="Approvals" description="Review, edit and approve drafted replies before they are sent. Nothing is sent without your approval." hideDescriptionOnPhone />
+      <PageHeader
+        title="Approvals"
+        description={
+          approvalOnly
+            ? 'Review, edit and approve drafted replies before they are sent. Nothing is sent without your approval.'
+            : 'Review, edit and approve drafted replies before they are sent. Replies on autopilot are sent after a countdown you can cancel.'
+        }
+        hideDescriptionOnPhone
+      />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-start">
         {queue.length > 0 ? (
           <div className="min-w-0 lg:sticky lg:top-[calc(var(--shell-header-h,3.5rem)+1rem)]">

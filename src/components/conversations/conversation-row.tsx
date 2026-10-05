@@ -47,6 +47,7 @@ export function ConversationRow({ item, now, timeZone }: { item: ConversationLis
           </p>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
             <ConversationStatusBadge status={item.status} />
+            {item.replyMode === 'autopilot' ? <Badge variant="info">Autopilot</Badge> : null}
             {item.pendingDrafts > 0 ? <Badge variant="warning">{item.pendingDrafts} draft{item.pendingDrafts === 1 ? '' : 's'} to review</Badge> : null}
             {window.kind === 'expiring' ? <Badge variant="warning">Window closing soon</Badge> : null}
             {window.kind === 'closed' && needsReply ? <Badge variant="danger">Window closed</Badge> : null}

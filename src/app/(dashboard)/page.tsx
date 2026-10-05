@@ -1,4 +1,4 @@
-import { Clock, FileClock, ListChecks, MessageSquareWarning } from 'lucide-react';
+import { Bot, Clock, FileClock, ListChecks, MessageSquareWarning } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { ConversationRow } from '@/components/conversations/conversation-row';
@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { listConversations } from '@/lib/conversations/queries';
 import { type AttentionKind, countWaitingOnYou, getNeedsAttention } from '@/lib/dashboard/attention';
 import { getDb } from '@/lib/db';
-import { countOpenDrafts } from '@/lib/drafts/queries';
+import { countOpenDrafts, countScheduledDrafts } from '@/lib/drafts/queries';
 import { getEnv } from '@/lib/env';
 import { formatDuration, medianResponseTime } from '@/lib/metrics/response-time';
 import { countTasks } from '@/lib/tasks/queries';
@@ -51,9 +51,10 @@ export default async function OverviewPage() {
   const db = getDb();
   const now = new Date();
   const timeZone = getEnv().OWNER_TIMEZONE;
-  const [{ items }, pendingDrafts, waitingOnYou, tasks, response, attention] = await Promise.all([
+  const [{ items }, pendingDrafts, scheduledDrafts, waitingOnYou, tasks, response, attention] = await Promise.all([
     listConversations(db, { filter: 'needs_reply', limit: 5 }),
     countOpenDrafts(db),
+    countScheduledDrafts(db),
     countWaitingOnYou(db),
     countTasks(db, now),
     medianResponseTime(db, now, 7),
@@ -65,7 +66,12 @@ export default async function OverviewPage() {
       <PageHeader title="Overview" description="What needs your attention right now." hideDescriptionOnPhone />
 
       <section aria-label="At a glance" className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Stat label="Drafts to approve" value={String(pendingDrafts)} hint={pendingDrafts > 0 ? 'Nothing is sent until you approve it.' : 'All caught up.'} href="/approvals" />
+        <Stat
+          label="Drafts to approve"
+          value={String(pendingDrafts - scheduledDrafts)}
+          hint={pendingDrafts - scheduledDrafts > 0 ? 'Nothing is sent until you approve it.' : 'All caught up.'}
+          href="/approvals"
+        />
         <Stat label="Waiting for your reply" value={String(waitingOnYou)} href="/conversations?filter=needs_reply" />
         <Stat
           label="Open tasks"
@@ -80,6 +86,20 @@ export default async function OverviewPage() {
           hint={response.samples > 0 ? `over ${response.samples} first message${response.samples === 1 ? '' : 's'}` : 'No replies to measure yet.'}
         />
       </section>
+
+      {scheduledDrafts > 0 ? (
+        <section aria-label="Autopilot" className="mb-6">
+          <Link href="/approvals" className="flex items-start gap-3 rounded-lg border border-info/40 bg-info/10 p-3 hover:bg-info/20">
+            <Bot aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="text-sm">
+              <span className="font-semibold">
+                Autopilot is about to send {scheduledDrafts} {scheduledDrafts === 1 ? 'reply' : 'replies'}.
+              </span>{' '}
+              <span className="text-muted-foreground">Open Approvals to read {scheduledDrafts === 1 ? 'it' : 'them'} or cancel before {scheduledDrafts === 1 ? 'it goes' : 'they go'} out.</span>
+            </span>
+          </Link>
+        </section>
+      ) : null}
 
       <section aria-label="Needs attention" className="mb-6">
         <h2 className="mb-2 text-base font-semibold">Needs attention</h2>

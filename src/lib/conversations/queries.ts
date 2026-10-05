@@ -43,6 +43,7 @@ export interface ConversationListItem {
   windowExpiresAt: Date | null;
   preview: { direction: 'inbound' | 'outbound'; text: string; status: MessageStatus } | null;
   pendingDrafts: number;
+  replyMode: 'approval' | 'autopilot';
 }
 
 export interface ConversationPage {
@@ -138,6 +139,7 @@ interface ListRow extends Record<string, unknown> {
   lm_status: MessageStatus | null;
   lm_deleted_at: RawTimestamp | null;
   pending_drafts: number;
+  reply_mode: 'approval' | 'autopilot';
 }
 
 /**
@@ -152,7 +154,7 @@ export async function listConversations(db: Db, params: ListParams = {}): Promis
     : sql``;
 
   const rows = await db.execute<ListRow>(sql`
-    SELECT c.id, c.status, c.last_message_at, c.window_expires_at,
+    SELECT c.id, c.status, c.reply_mode, c.last_message_at, c.window_expires_at,
            to_char(c.last_message_at AT TIME ZONE 'UTC', ${MICROS}) AS cursor_t,
            ct.display_name, ct.username, ct.phone_e164, ct.bsuid,
            lm.direction AS lm_direction, lm.type AS lm_type, lm.content AS lm_content, lm.status AS lm_status, lm.deleted_at AS lm_deleted_at,
@@ -189,6 +191,7 @@ export async function listConversations(db: Db, params: ListParams = {}): Promis
           ? { direction: row.lm_direction, text: previewOf(row.lm_type, row.lm_content, row.lm_deleted_at !== null), status: row.lm_status }
           : null,
       pendingDrafts: row.pending_drafts,
+      replyMode: row.reply_mode,
     }),
   );
   return { items, nextCursor: rows.length > limit && last ? encodeCursor({ t: last.cursor_t, id: last.id }) : null };
@@ -215,6 +218,8 @@ export interface ThreadMessage {
   error: MessageError | null;
   replyTo: { id: string; direction: 'inbound' | 'outbound'; preview: string } | null;
   reactions: Array<{ emoji: string; by: 'customer' | 'owner' }>;
+  /** The owner flagged this automatic reply as bad ("Mark bad"). */
+  markedBad: boolean;
 }
 
 export interface Thread {
@@ -227,6 +232,8 @@ export interface Thread {
     lastInboundAt: Date | null;
     summary: string | null;
     consecutiveAutoReplies: number;
+    replyMode: 'approval' | 'autopilot';
+    autopilotUntil: Date | null;
     /** False for a name-only imported contact: there is nobody to send to, so the composer says so instead of failing. */
     canReceive: boolean;
   };
@@ -254,6 +261,7 @@ interface MessageRow extends Record<string, unknown> {
   transcription_status: ThreadMessage['transcriptionStatus'];
   error: MessageError | null;
   reply_to_message_id: string | null;
+  marked_bad_at: RawTimestamp | null;
 }
 
 const MEDIA_TYPES: ReadonlySet<string> = new Set(['image', 'video', 'audio', 'document', 'sticker']);
@@ -278,6 +286,8 @@ export async function getThread(db: Db, conversationId: string, params: { before
       lastInboundAt: conversations.lastInboundAt,
       summary: conversations.summary,
       consecutiveAutoReplies: conversations.consecutiveAutoReplies,
+      replyMode: conversations.replyMode,
+      autopilotUntil: conversations.autopilotUntil,
       displayName: contacts.displayName,
       username: contacts.username,
       phoneE164: contacts.phoneE164,
@@ -296,7 +306,7 @@ export async function getThread(db: Db, conversationId: string, params: { before
   const newestFirst = await db.execute<MessageRow>(sql`
     SELECT m.id, m.direction, m.type, m.content, m.content_source, m.status, m.provenance, m.occurred_at,
            to_char(m.occurred_at AT TIME ZONE 'UTC', ${MICROS}) AS occurred_us,
-           m.edited_at, m.deleted_at, m.media_id, m.media_path, m.media_mime, m.transcription_status, m.error, m.reply_to_message_id
+           m.edited_at, m.deleted_at, m.media_id, m.media_path, m.media_mime, m.transcription_status, m.error, m.reply_to_message_id, m.marked_bad_at
     FROM messages m
     WHERE m.conversation_id = ${conversationId} AND m.type <> 'reaction' ${olderThan}
     ORDER BY m.occurred_at DESC, m.id DESC
@@ -353,6 +363,7 @@ export async function getThread(db: Db, conversationId: string, params: { before
       error: row.error,
       replyTo: row.reply_to_message_id && quote ? { id: row.reply_to_message_id, ...quote } : null,
       reactions: [...(reactions.get(row.id) ?? new Map<'customer' | 'owner', string>()).entries()].map(([by, emoji]) => ({ emoji, by })),
+      markedBad: row.marked_bad_at !== null,
     };
   });
 
@@ -366,6 +377,8 @@ export async function getThread(db: Db, conversationId: string, params: { before
       lastInboundAt: head.lastInboundAt,
       summary: head.summary,
       consecutiveAutoReplies: head.consecutiveAutoReplies,
+      replyMode: head.replyMode,
+      autopilotUntil: head.autopilotUntil,
       canReceive: head.phoneE164 !== null || head.bsuid !== null,
     },
     messages,

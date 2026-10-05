@@ -5,6 +5,7 @@ import type { ThreadMessage } from '@/lib/conversations/queries';
 import { cn } from '@/lib/utils';
 import { UnknownMessageActions } from '@/components/send/unknown-message-actions';
 import { DeliveryStatus } from './delivery-status';
+import { MarkBadButton } from './mark-bad-button';
 
 const PROVENANCE_LABEL: Partial<Record<ThreadMessage['provenance'], string>> = {
   owner_app_echo: 'Sent from your phone',
@@ -138,6 +139,7 @@ export function MessageBubble({ message, timeZone, highlight = false }: { messag
         {provenance ? <span>{provenance}</span> : null}
         {!inbound ? <DeliveryStatus status={message.status} /> : null}
       </div>
+      {!inbound && message.provenance === 'ai_autopilot' ? <MarkBadButton messageId={message.id} markedBad={message.markedBad} /> : null}
       {!inbound && message.status === 'unknown' ? <UnknownMessageActions messageId={message.id} canResend={message.type === 'text'} /> : null}
       {!inbound && message.status === 'failed' && message.error ? (
         <p className="px-1 text-xs text-destructive">

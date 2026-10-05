@@ -1,4 +1,6 @@
 import type { Processor } from 'bullmq';
+import { sendAutopilotDigest } from '@/lib/autopilot/digest';
+import { getDb } from '@/lib/db';
 import { sweepWebhookEvents } from '@/lib/ingest/sweep';
 import { logger } from '@/lib/logger';
 import { scanSends } from '@/lib/ops/alerts-scan';
@@ -9,13 +11,14 @@ import type { ScheduledJobName } from '@/lib/queue/names';
 type Handler = () => Promise<unknown>;
 
 /**
- * Handlers for the recurring jobs on the `scheduled` queue. Phases add theirs here (autopilot-digest in Phase 7); a job name
+ * Handlers for the recurring jobs on the `scheduled` queue. Each phase adds its own; a job name
  * with no handler is logged and skipped rather than retried forever.
  */
 const HANDLERS: Partial<Record<ScheduledJobName, Handler>> = {
   'sweep-webhook-events': () => sweepWebhookEvents(),
   'alerts-scan': () => scanSends(),
   'token-health': () => checkTokenHealth(),
+  'autopilot-digest': () => sendAutopilotDigest(getDb()),
   'purge-payloads': async () => {
     const purged = await purgeOldPayloads();
     logger.info({ purged }, 'purged old webhook payloads');

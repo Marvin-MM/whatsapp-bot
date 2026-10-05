@@ -14,6 +14,7 @@ import { isWindowOpen } from '@/lib/conversations/window';
 import { describeEditRate, findPlaceholders, intentLabel, intentTone, isEdited, riskFlagLabel } from '@/lib/drafts/present';
 import type { DraftDetail } from '@/lib/drafts/queries';
 import { MAX_TEXT_LENGTH } from '@/lib/send/precheck';
+import { AutopilotCountdown, AutopilotWhyNot } from './autopilot-notice';
 import { showFlash } from './flash';
 
 export interface DraftCardProps {
@@ -222,6 +223,9 @@ export function DraftCard({ draft, serverNow, sendingPaused, aiPaused, canReceiv
           </Badge>
         ))}
       </div>
+
+      {draft.status === 'scheduled' && draft.scheduledSendAt ? <AutopilotCountdown draftId={draft.id} sendAt={draft.scheduledSendAt} serverNow={serverNow} /> : null}
+      {draft.status === 'pending' && draft.autopilotReasons && draft.autopilotReasons.length > 0 ? <AutopilotWhyNot reasons={draft.autopilotReasons} /> : null}
 
       {open && draft.stale ? (
         <Notice tone="warning" title="The customer wrote again after this draft was made">

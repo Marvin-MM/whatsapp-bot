@@ -260,7 +260,8 @@ describe('the schedule', () => {
   it('registers every job that has a handler, in the owner’s time zone, and nothing without a handler', async () => {
     const { schedulerDefinitions } = await import('../../worker/schedulers');
     const definitions = schedulerDefinitions('Africa/Kampala');
-    expect(definitions.map((d) => d.id).sort()).toEqual(['alerts-scan', 'purge-payloads', 'sweep-webhook-events', 'token-health']);
+    expect(definitions.map((d) => d.id).sort()).toEqual(['alerts-scan', 'autopilot-digest', 'purge-payloads', 'sweep-webhook-events', 'token-health']);
+    expect(definitions.find((d) => d.id === 'autopilot-digest')?.repeat).toEqual({ pattern: '0 20 * * *', tz: 'Africa/Kampala' });
     for (const d of definitions) if ('pattern' in d.repeat) expect(d.repeat.tz).toBe('Africa/Kampala');
   });
 });
