@@ -4,6 +4,7 @@ import { downloadMediaProcessor } from './processors/download-media';
 import { outboundSendProcessor } from './processors/outbound-send';
 import { processWebhookEventProcessor } from './processors/process-webhook-event';
 import { scheduledProcessor } from './processors/scheduled';
+import { styleExtractProcessor } from './processors/style-extract';
 
 export interface WorkerRegistration {
   queue: QueueName;
@@ -20,5 +21,6 @@ export const WORKER_REGISTRATIONS: readonly WorkerRegistration[] = [
   { queue: 'process-webhook-event', processor: processWebhookEventProcessor },
   { queue: 'download-media', processor: downloadMediaProcessor },
   { queue: 'outbound-send', processor: outboundSendProcessor },
+  { queue: 'style-extract', processor: styleExtractProcessor },
   { queue: 'scheduled', processor: scheduledProcessor },
 ];
