@@ -12,7 +12,7 @@ import { createEnrolledOwner, headersWith } from '../helpers/auth';
 import { MIN, type World, seedAutopilotWorld } from '../helpers/autopilot';
 import { FIXTURE } from '../helpers/fixtures';
 import { chatCompletion } from '../helpers/groq';
-import { NOW, seedContact, seedConversation, setupIngestHarness } from '../helpers/ingest';
+import { NOW, seedContact, seedConversation, seedMessage, setupIngestHarness } from '../helpers/ingest';
 import { jsonResponse, stubNetwork } from '../helpers/network';
 
 const requestHeaders = vi.hoisted(() => ({ current: new Headers() }));
@@ -123,6 +123,14 @@ describe('switching a conversation to autopilot (spec 10.1)', () => {
     expect((await mode(id))?.reply_mode).toBe('approval');
   });
 
+  it('a conversation that does not exist is refused with that reason (not a crash), both ways', async () => {
+    await signedIn();
+    await seedAutopilotWorld(sql(), { replyMode: 'approval' });
+    const missing = '0190aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee';
+    expect(await actions.setReplyMode({ conversationId: missing, mode: 'autopilot' })).toMatchObject({ ok: false, error: { code: 'refused', reason: 'not_found' } });
+    expect(await actions.setReplyMode({ conversationId: missing, mode: 'approval' })).toMatchObject({ ok: false, error: { code: 'refused', reason: 'not_found' } });
+  });
+
   it('rejects input that is not a conversation id or a mode', async () => {
     await signedIn();
     expect(await actions.setReplyMode({ conversationId: 'nope', mode: 'autopilot' })).toMatchObject({ ok: false, error: { code: 'invalid_input' } });
@@ -142,6 +150,14 @@ describe('switching back to approval', () => {
     expect((await audit('conversation.autopilot_off'))[0]?.metadata).toMatchObject({ previous: 'autopilot', cancelledDrafts: 1 });
     // and a late run of the job does nothing
     expect((await autopilotSend(world.draftId, { now: new Date(NOW.getTime() + 3 * MIN) })).outcome).toBe('skipped');
+  });
+
+  it('ends the autopilot period too: no end date is left behind', async () => {
+    await signedIn();
+    const world = await seedAutopilotWorld(sql());
+    await sql()`UPDATE conversations SET autopilot_until = ${new Date(NOW.getTime() + 24 * 60 * MIN)} WHERE id = ${world.conversationId}`;
+    expect(await actions.setReplyMode({ conversationId: world.conversationId, mode: 'approval' })).toMatchObject({ ok: true });
+    expect(await mode(world.conversationId)).toMatchObject({ reply_mode: 'approval', autopilot_until: null });
   });
 
   it('works even when the gate has stopped passing and autopilot is paused (turning it off must never be blocked)', async () => {
@@ -177,6 +193,8 @@ describe('the global autopilot switch', () => {
     expect(await setKillSwitch({ name: 'autopilot_paused', value: true })).toMatchObject({ ok: true });
     expect(await status(world.draftId)).toBe('pending');
     expect(await job(world.draftId)).toBeUndefined();
+    // a draft that is back with the owner no longer carries a send time (nothing may read it as "about to go")
+    expect((await sql()<{ scheduled_send_at: Date | null }[]>`SELECT scheduled_send_at FROM drafts WHERE id = ${world.draftId}`)[0]?.scheduled_send_at).toBeNull();
   });
 
   it('the other two switches are not affected by the autopilot gate', async () => {
@@ -221,6 +239,16 @@ describe('Mark bad', () => {
     const [second] = await sql()<{ marked_bad_at: Date }[]>`SELECT marked_bad_at FROM messages WHERE id = ${messageId}`;
     expect(second?.marked_bad_at.toISOString()).toBe(first?.marked_bad_at.toISOString());
     expect(await audit('autopilot.demote')).toHaveLength(1);
+  });
+
+  it('also stops a countdown that is running for the conversation: the draft goes back to the owner and its job is removed', async () => {
+    await signedIn();
+    const world = await scheduled();
+    const earlier = await seedMessage(sql(), world.conversationId, { direction: 'outbound', provenance: 'ai_autopilot', occurredAt: new Date(NOW.getTime() - 60 * MIN) });
+    expect(await actions.markAutopilotBad({ messageId: earlier })).toMatchObject({ ok: true, data: { demoted: true } });
+    expect(await status(world.draftId)).toBe('pending');
+    expect(await job(world.draftId)).toBeUndefined();
+    expect((await sql()<{ scheduled_send_at: Date | null }[]>`SELECT scheduled_send_at FROM drafts WHERE id = ${world.draftId}`)[0]?.scheduled_send_at).toBeNull();
   });
 
   it('only a reply the autopilot sent can be marked bad', async () => {
@@ -277,6 +305,21 @@ describe('autopilot settings', () => {
     expect(await actions.updateAutopilotSettings(valid)).toEqual({ ok: true, data: { changed: [] } });
   });
 
+  it('stores each allowed kind once, however it arrives', async () => {
+    await signedIn();
+    await seedAutopilotWorld(sql());
+    expect(await actions.updateAutopilotSettings({ ...valid, allowedIntents: ['scheduling', 'question', 'question', 'scheduling'] })).toMatchObject({ ok: true });
+    const [row] = await sql()<{ autopilot_allowed_intents: string[] }[]>`SELECT autopilot_allowed_intents FROM settings`;
+    expect([...(row?.autopilot_allowed_intents ?? [])].sort()).toEqual(['question', 'scheduling']);
+  });
+
+  it('listing the same kinds in another order is not a change', async () => {
+    await signedIn();
+    await seedAutopilotWorld(sql());
+    await actions.updateAutopilotSettings({ ...valid, allowedIntents: ['question', 'scheduling'] });
+    expect(await actions.updateAutopilotSettings({ ...valid, allowedIntents: ['scheduling', 'question'] })).toEqual({ ok: true, data: { changed: [] } });
+  });
+
   it.each([
     ['an empty disclosure (customers must be told)', { disclosure: '' }],
     ['a blank disclosure', { disclosure: '   ' }],
@@ -289,6 +332,9 @@ describe('autopilot settings', () => {
     ['a delay over 30 minutes', { delaySeconds: 1801 }],
     ['a limit of zero', { maxPerDay: 0 }],
     ['a streak limit of zero', { maxConsecutive: 0 }],
+    ['an hourly limit above 20', { maxPerConversationPerHour: 21 }],
+    ['a daily limit above 200', { maxPerDay: 201 }],
+    ['a streak limit above 20', { maxConsecutive: 21 }],
     ['an hourly limit that is not a whole number', { maxPerConversationPerHour: 1.5 }],
   ])('refuses %s and changes nothing', async (_name, change) => {
     await signedIn();

@@ -62,6 +62,8 @@ describe('who may press the buttons', () => {
     ['no secret header', null],
     ['a wrong secret', 'not-the-secret'],
     ['a secret of the wrong length', 'x'],
+    ['a wrong secret of exactly the right length (only the last character differs)', `${SECRET.slice(0, -1)}X`],
+    ['the right secret in the wrong case', SECRET.toUpperCase()],
     ['the right secret with a trailing character', `${SECRET}x`],
   ])('%s is rejected with 401 and changes nothing', async (_name, secret) => {
     const { world, net } = await scheduled();
@@ -114,7 +116,9 @@ describe('what it accepts', () => {
   it('a body over 64 KB is ignored (200) without being read into memory', async () => {
     const { world } = await scheduled();
     const big = new Request('https://example.test/api/webhooks/telegram', { method: 'POST', headers: { 'x-telegram-bot-api-secret-token': SECRET, 'content-length': String(70 * 1024) }, body: 'x'.repeat(70 * 1024) });
-    expect((await handleTelegramWebhook(big)).status).toBe(200);
+    const response = await handleTelegramWebhook(big);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, ignored: 'too_large' });
     expect(await draftStatus(world.draftId)).toBe('scheduled');
   });
 
@@ -209,10 +213,11 @@ describe('Send now', () => {
     expect(await count(sql(), 'messages', `provenance = 'ai_autopilot'`)).toBe(0);
   });
 
-  it('repeated taps change nothing more (one audit entry), and a tap after Cancel does nothing', async () => {
-    const { world } = await scheduled();
+  it('repeated taps change nothing more (one audit entry, and the later taps are told the reply is already on its way), and a tap after Cancel does nothing', async () => {
+    const { world, net } = await scheduled();
     for (let i = 0; i < 3; i += 1) await handleTelegramWebhook(update(callbackData('send', world.draftId)));
     expect(await audits('autopilot.send_now')).toHaveLength(1);
+    expect(answers(net).map((request) => request.body.text)).toEqual(['Sending now (it is checked once more first).', 'Already on its way.', 'Already on its way.']);
     // the job the first tap promoted is still there for the worker: repeated taps never delete it
     expect(await (await job(world.draftId))?.isWaiting()).toBe(true);
     expect(await draftStatus(world.draftId)).toBe('scheduled');
@@ -233,6 +238,30 @@ describe('Send now', () => {
     expect(await audits('autopilot.send_now')).toHaveLength(0);
     expect(String(answers(net).at(-1)?.body.text)).toBe('Already handled.');
     expect(await job(world.draftId)).toBeUndefined();
+  });
+});
+
+describe('a tap on something that is no longer there or no longer waiting', () => {
+  it('Send now for a draft that does not exist is answered politely (200), not a server error', async () => {
+    const { net } = await scheduled();
+    const response = await handleTelegramWebhook(update(callbackData('send', '0190aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee')));
+    expect(response.status).toBe(200);
+    expect(String(answers(net).at(-1)?.body.text)).toBe('That reply no longer exists.');
+  });
+
+  it.each([
+    ['cancel', 'Already handled.'],
+    ['send', 'Already handled.'],
+  ] as const)('a %s tap on a draft the owner handled by other means (its phone message still has buttons) takes the buttons off', async (action, answer) => {
+    const { world, net } = await scheduled();
+    // The owner rejected it from the dashboard and the message was never rewritten (as if that edit had failed).
+    await sql()`UPDATE drafts SET status = 'rejected', scheduled_send_at = NULL WHERE id = ${world.draftId}`;
+    expect((await handleTelegramWebhook(update(callbackData(action, world.draftId)))).status).toBe(200);
+    expect(edits(net)).toHaveLength(1);
+    expect(String(edits(net)[0]?.body.text)).toContain('Already handled.');
+    expect(edits(net)[0]?.body.reply_markup).toEqual({ inline_keyboard: [] });
+    expect(String(answers(net).at(-1)?.body.text)).toBe(answer);
+    expect(await audits(action === 'cancel' ? 'autopilot.cancel' : 'autopilot.send_now')).toHaveLength(0);
   });
 });
 

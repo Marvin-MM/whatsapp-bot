@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildDigest, sendAutopilotDigest } from '@/lib/autopilot/digest';
-import { getDb } from '@/lib/db';
+import { type Digest, buildDigest, digestText, sendAutopilotDigest } from '@/lib/autopilot/digest';
+import { type Db, getDb } from '@/lib/db';
 import { buildRange, getAutopilot } from '@/lib/metrics/analytics';
 import { DAY, MIN, seedAutopilotWorld } from '../helpers/autopilot';
 import { NOW, seedMessage, setupIngestHarness } from '../helpers/ingest';
@@ -61,6 +61,39 @@ describe('the digest numbers (last 24 hours)', () => {
   });
 });
 
+describe('the digest numbers: ranking and wording', () => {
+  it('lists at most the three most frequent reasons, most frequent first (not alphabetical), ties by name', async () => {
+    const world = await seedAutopilotWorld(sql(), { gate: false });
+    const draft = (reason: string) => sql()`
+      INSERT INTO drafts (id, conversation_id, trigger_message_ids, content, original_content, intent, analysis, model, prompt_version, status, autopilot_decision, created_at)
+      VALUES (gen_random_uuid(), ${world.conversationId}, '{}'::uuid[], 'x', 'x', 'question', 'a', 'm', 'p', 'pending', ${sql().json({ eligible: false, reasons: [reason], verifier: null })}, ${new Date(EVENING.getTime() - 4 * 60 * MIN)})`;
+    for (const reason of ['verifier_failed', 'verifier_failed', 'verifier_failed', 'risk_flags', 'risk_flags', 'quiet_hours', 'likely_bot']) await draft(reason);
+    expect((await buildDigest(getDb(), EVENING)).topReasons).toEqual([
+      { reason: 'verifier_failed', count: 3 },
+      { reason: 'risk_flags', count: 2 },
+      { reason: 'likely_bot', count: 1 },
+    ]);
+  });
+
+  it('says every number that is not zero in words, and never a message', () => {
+    const digest: Digest = { sent: 4, cancelled: 1, routed: 2, silent: 3, demoted: 2, markedBad: 1, topReasons: [{ reason: 'quiet_hours', count: 2 }, { reason: 'made_up_reason', count: 1 }] };
+    const text = digestText(digest, 'https://example.test/settings/autopilot');
+    expect(text).toContain('Sent automatically: 4');
+    expect(text).toContain('Cancelled by you: 1');
+    expect(text).toContain('Handed to your approval instead: 2');
+    expect(text).toContain('"Thanks"/"ok" left unanswered: 3');
+    expect(text).toContain('Conversations taken off autopilot: 2');
+    expect(text).toContain('Replies you marked bad: 1');
+    expect(text).toContain('Quiet hours (2)');
+    expect(text).toContain('made up reason (1)'); // an unknown code is made readable, not shown raw
+    expect(text.endsWith('https://example.test/settings/autopilot')).toBe(true);
+    const quiet = digestText({ sent: 0, cancelled: 0, routed: 0, silent: 0, demoted: 0, markedBad: 0, topReasons: [] }, 'link');
+    expect(quiet).not.toContain('marked bad');
+    expect(quiet).not.toContain('taken off autopilot');
+    expect(quiet).not.toContain('Why they came to you');
+  });
+});
+
 describe('sending the digest', () => {
   it('sends ONE message with the counts and a link; a second run the same day sends nothing', async () => {
     await activity();
@@ -101,6 +134,21 @@ describe('sending the digest', () => {
     await sql()`UPDATE settings SET notify_telegram = true, quiet_hours = '{"start":"19:00","end":"22:00"}'::jsonb`;
     expect(await sendAutopilotDigest(getDb(), EVENING)).toBe('skipped');
     expect(net.telegram).toHaveLength(0);
+  });
+
+  it('"once a day" means the OWNER\'s day: 23:30 and 00:30 in Kampala are two days even though both are the same day in UTC', async () => {
+    await seedAutopilotWorld(sql(), { gate: false, paused: false });
+    await sql()`UPDATE settings SET quiet_hours = '{"start":"03:00","end":"04:00"}'::jsonb`;
+    const net = stubNetwork({ telegram: () => ok() });
+    expect(await sendAutopilotDigest(getDb(), new Date('2026-10-04T20:30:00Z'))).toBe('sent'); // 23:30 on the 4th in Kampala
+    expect(await sendAutopilotDigest(getDb(), new Date('2026-10-04T21:30:00Z'))).toBe('sent'); // 00:30 on the 5th
+    expect(await sendAutopilotDigest(getDb(), new Date('2026-10-04T21:45:00Z'))).toBe('skipped'); // the same day again
+    expect(net.telegram).toHaveLength(2);
+  });
+
+  it('never throws out of the scheduled job: a failure is reported as "failed"', async () => {
+    const broken = { select: () => { throw new Error('database is down'); } } as unknown as Db;
+    expect(await sendAutopilotDigest(broken, EVENING)).toBe('failed');
   });
 
   it('a failed delivery frees the day: the next run tries again', async () => {

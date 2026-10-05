@@ -1,3 +1,4 @@
+import { Worker } from 'bullmq';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetModelProvider } from '@/lib/ai/models';
 import { resetStrictCache } from '@/lib/ai/run';
@@ -5,6 +6,7 @@ import { runAutopilotForDraft } from '@/lib/autopilot/decide';
 import { autopilotJobKey } from '@/lib/autopilot/jobs';
 import { autopilotSend } from '@/lib/autopilot/send';
 import { getDb } from '@/lib/db';
+import { getEnv } from '@/lib/env';
 import { toJobId } from '@/lib/queue/enqueue';
 import { getQueue } from '@/lib/queue/queues';
 import { performSend } from '@/lib/send/send-message';
@@ -13,6 +15,7 @@ import { FIXTURE } from '../helpers/fixtures';
 import { chatCompletion } from '../helpers/groq';
 import { HOUR, NOW, count, ingestPayload, seedMessage, setupIngestHarness } from '../helpers/ingest';
 import { jsonResponse, stubNetwork } from '../helpers/network';
+import { createTestRedis } from '../helpers/redis';
 
 const h = setupIngestHarness();
 const sql = () => h.admin();
@@ -275,6 +278,22 @@ describe('never sends what the pre-check forbids', () => {
   });
 });
 
+describe('an unexpected failure is not disguised as a refusal', () => {
+  it('a database error inside the send path is raised (the job fails loudly) and the draft keeps its place: scheduled, nothing sent', async () => {
+    const { world } = await scheduled();
+    await sql().unsafe(`CREATE OR REPLACE FUNCTION p7_fail() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'disk on fire'; END $$ LANGUAGE plpgsql`);
+    await sql().unsafe(`CREATE TRIGGER p7_fail BEFORE INSERT ON messages FOR EACH ROW WHEN (NEW.provenance = 'ai_autopilot') EXECUTE FUNCTION p7_fail()`);
+    try {
+      await expect(autopilotSend(world.draftId, { now: AFTER })).rejects.toThrow();
+    } finally {
+      await sql().unsafe('DROP TRIGGER p7_fail ON messages');
+      await sql().unsafe('DROP FUNCTION p7_fail()');
+    }
+    expect((await draftRow(world.draftId)).status).toBe('scheduled');
+    expect(await messagesOf(world.conversationId)).toHaveLength(0);
+  });
+});
+
 describe('the safety net under the countdown (alerts-scan)', () => {
   it('a countdown whose job was lost is started again, once; a quarter of an hour late the draft goes back to the owner instead', async () => {
     const { world } = await scheduled();
@@ -295,9 +314,44 @@ describe('the safety net under the countdown (alerts-scan)', () => {
     expect(await repairAutopilotCountdowns(getDb(), new Date(scheduledAt.getTime() + 16 * MIN))).toEqual({ restarted: 0, returned: 1 });
     const draft = await draftRow(world.draftId);
     expect(draft.status).toBe('pending');
+    expect(draft.scheduled_send_at).toBeNull();
     expect(draft.autopilot_decision).toMatchObject({ eligible: false, reasons: ['countdown_lost'] });
     expect(await messagesOf(world.conversationId)).toHaveLength(0);
-    expect(net.telegram.length).toBeGreaterThan(0);
+    // The owner is told twice, the ordinary way: the countdown message loses its buttons and says why, and the draft is announced for approval.
+    expect(edits(net)).toHaveLength(1);
+    expect(String(edits(net)[0]?.body.text)).toContain('countdown was lost');
+    expect(edits(net)[0]?.body.reply_markup).toEqual({ inline_keyboard: [] });
+    expect(pings(net)).toHaveLength(1);
+    expect(String(pings(net)[0]?.body.text)).toContain('ready for your approval');
+    // ...and it is on the record, as the system.
+    expect(await audits('autopilot.recheck_failed')).toEqual([{ actor: 'system', metadata: { conversationId: world.conversationId, reasons: ['countdown_lost'] } }]);
+    expect((await h.events()).map((event) => event.type)).toContain('autopilot:cancelled');
+  });
+
+  it('a countdown whose job ran and FAILED (it is not alive: the draft is still waiting) is started again', async () => {
+    const { world } = await scheduled();
+    const { repairAutopilotCountdowns } = await import('@/lib/autopilot/safety-net');
+    await getQueue('autopilot-send').obliterate({ force: true });
+    // A job that really fails, as in production: a worker throws once.
+    const worker = new Worker('autopilot-send', async () => { throw new Error('boom'); }, { connection: createTestRedis(), prefix: getEnv().BULLMQ_PREFIX });
+    const failed = new Promise<void>((resolve) => worker.once('failed', () => resolve()));
+    await getQueue('autopilot-send').add('send', { draftId: world.draftId }, { jobId: toJobId(autopilotJobKey(world.draftId)), attempts: 1 });
+    await failed;
+    await worker.close();
+    expect(await (await getQueue('autopilot-send').getJob(toJobId(autopilotJobKey(world.draftId))))?.getState()).toBe('failed');
+
+    const scheduledAt = (await draftRow(world.draftId)).scheduled_send_at as Date;
+    expect(await repairAutopilotCountdowns(getDb(), new Date(scheduledAt.getTime() + 3 * MIN))).toEqual({ restarted: 1, returned: 0 });
+    expect(await (await getQueue('autopilot-send').getJob(toJobId(autopilotJobKey(world.draftId))))?.getState()).not.toBe('failed');
+  });
+
+  it('only a draft that is still `scheduled` is ever repaired: a pending one carrying an old send time is left alone', async () => {
+    const world = await seedAutopilotWorld(sql());
+    const { repairAutopilotCountdowns } = await import('@/lib/autopilot/safety-net');
+    await sql()`UPDATE drafts SET scheduled_send_at = ${new Date(NOW.getTime() - 20 * MIN)} WHERE id = ${world.draftId}`;
+    expect(await repairAutopilotCountdowns(getDb(), NOW)).toEqual({ restarted: 0, returned: 0 });
+    expect((await draftRow(world.draftId)).status).toBe('pending');
+    expect(await getQueue('autopilot-send').getJob(toJobId(autopilotJobKey(world.draftId)))).toBeUndefined();
   });
 
   it('leaves a healthy countdown alone', async () => {

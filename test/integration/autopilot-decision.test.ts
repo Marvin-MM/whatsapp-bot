@@ -376,3 +376,101 @@ describe('after the model drafts (generate-draft)', () => {
   });
 });
 
+
+// ------------------------------------------------------------------------------------------------------ added after the mutation run
+// Each of these closes a mutant that survived: the behaviour was real, nothing was watching it.
+
+describe('a draft that is not pending is not the autopilot\'s business', () => {
+  it('a rejected draft of a complaint neither asks the verifier nor takes the conversation off autopilot', async () => {
+    const world = await seedAutopilotWorld(sql(), { intent: 'complaint' });
+    await sql()`UPDATE drafts SET status = 'rejected' WHERE id = ${world.draftId}`;
+    const net = network();
+    expect(await run(world)).toEqual({ kind: 'not_applicable' });
+    expect(net.groq).toHaveLength(0);
+    const [conversation] = await sql()<{ reply_mode: string }[]>`SELECT reply_mode FROM conversations WHERE id = ${world.conversationId}`;
+    expect(conversation?.reply_mode).toBe('autopilot');
+    expect(await audits('autopilot.demote')).toHaveLength(0);
+  });
+});
+
+describe('"ok" and "thanks": only genuine autopilot stays silent', () => {
+  it('an "ok" that is also a complaint goes to the owner and demotes the conversation: it is not closed unseen', async () => {
+    const world = await seedAutopilotWorld(sql(), { noReplyNeeded: true, intent: 'complaint' });
+    network();
+    const outcome = await run(world);
+    expect(outcome.kind).toBe('routed');
+    expect((await draft(world.draftId)).status).toBe('pending');
+    const [conversation] = await sql()<{ reply_mode: string }[]>`SELECT reply_mode FROM conversations WHERE id = ${world.conversationId}`;
+    expect(conversation?.reply_mode).toBe('approval');
+  });
+
+  it('is NOT closed when the autopilot period of the conversation has ended: it waits for the owner, who is told why', async () => {
+    const world = await seedAutopilotWorld(sql(), { noReplyNeeded: true });
+    await sql()`UPDATE conversations SET autopilot_until = ${new Date(NOW.getTime() - MIN)} WHERE id = ${world.conversationId}`;
+    network();
+    const outcome = await run(world);
+    expect(outcome.kind).toBe('routed');
+    expect(outcome.kind === 'routed' ? outcome.reasons : []).toContain('autopilot_expired');
+    expect((await draft(world.draftId)).status).toBe('pending');
+  });
+});
+
+describe('everything is asked again when the verifier comes back', () => {
+  /** The verifier call takes seconds in real life. `during` runs while it "thinks" (the fake provider's handler), then the verdict is returned. */
+  function whileVerifying(during: () => Promise<void>, answer: () => Response = () => verdict()) {
+    return stubNetwork({
+      telegram: telegramOk,
+      groq: async () => {
+        await during();
+        return answer();
+      },
+    });
+  }
+
+  it('the owner switched the conversation back to approval meanwhile: not scheduled, routed with the reason, no countdown, no phone message', async () => {
+    const world = await seedAutopilotWorld(sql());
+    const net = whileVerifying(async () => {
+      await sql()`UPDATE conversations SET reply_mode = 'approval' WHERE id = ${world.conversationId}`;
+    });
+    expect(await run(world)).toEqual({ kind: 'routed', reasons: ['not_autopilot_mode'] });
+    const row = await draft(world.draftId);
+    expect(row.status).toBe('pending');
+    expect(row.autopilot_decision).toMatchObject({ eligible: false, reasons: ['not_autopilot_mode'] });
+    expect(await job(world.draftId)).toBeUndefined();
+    expect(net.telegram.filter((request) => request.url.endsWith('/sendMessage'))).toHaveLength(0);
+  });
+
+  it('autopilot was paused meanwhile: not scheduled', async () => {
+    const world = await seedAutopilotWorld(sql());
+    whileVerifying(async () => {
+      await sql()`UPDATE settings SET autopilot_paused = true`;
+    });
+    expect(await run(world)).toEqual({ kind: 'routed', reasons: ['autopilot_paused'] });
+    expect((await draft(world.draftId)).status).toBe('pending');
+  });
+
+  it('the owner rejected the draft meanwhile and the verifier then fails it: the owner\'s decision stands and no autopilot decision is written over it', async () => {
+    const world = await seedAutopilotWorld(sql());
+    whileVerifying(
+      async () => {
+        await sql()`UPDATE drafts SET status = 'rejected' WHERE id = ${world.draftId}`;
+      },
+      () => verdict({ verdict: 'fail', unsupportedClaims: ['x'] }),
+    );
+    await run(world);
+    const row = await draft(world.draftId);
+    expect(row.status).toBe('rejected');
+    expect(row.autopilot_decision).toBeNull();
+  });
+
+  it('the owner rejected the draft meanwhile and the verifier passes it: it is NOT scheduled', async () => {
+    const world = await seedAutopilotWorld(sql());
+    whileVerifying(async () => {
+      await sql()`UPDATE drafts SET status = 'rejected' WHERE id = ${world.draftId}`;
+    });
+    expect(await run(world)).toEqual({ kind: 'not_applicable' });
+    expect((await draft(world.draftId)).status).toBe('rejected');
+    expect(await job(world.draftId)).toBeUndefined();
+    expect(await audits('autopilot.schedule')).toHaveLength(0);
+  });
+});
