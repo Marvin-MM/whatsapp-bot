@@ -11,6 +11,7 @@ import { getEnv } from '@/lib/env';
 import { logger } from '@/lib/logger';
 import { GraphError, downloadMedia, getMediaInfo } from '@/lib/whatsapp/client';
 import { type MediaKind, checkMime, maxBytesFor, mediaRelativePath, resolveMediaPath, verifySha256 } from '@/lib/whatsapp/media';
+import { draftTriggerEffect } from '@/lib/drafts/trigger';
 import { runEffects } from './effects';
 
 export type MediaOutcome = 'stored' | 'already_stored' | 'no_media' | 'unavailable' | 'message_missing';
@@ -169,7 +170,11 @@ async function transcribeAndStore(db: Db, row: MessageRow, bytes: Uint8Array, fi
       logger.info({ messageId: row.id, reasons: result.assessment.reasons }, 'voice note transcript judged unreliable');
     }
     if (updated.length > 0) {
-      await runEffects([{ type: 'publish', event: { type: 'conversation:updated', payload: { conversationId: row.conversationId } } }]);
+      // The voice note now has its words (or was judged unusable): a draft that was waiting for it can go.
+      await runEffects([
+        { type: 'publish', event: { type: 'conversation:updated', payload: { conversationId: row.conversationId } } },
+        draftTriggerEffect(row.conversationId, { delaySeconds: 3 }),
+      ]);
     }
   } catch (error) {
     if (!(error instanceof AiProviderError)) throw error;
@@ -179,5 +184,6 @@ async function transcribeAndStore(db: Db, row: MessageRow, bytes: Uint8Array, fi
       .set({ transcriptionStatus: 'failed' })
       .where(and(eq(messages.id, row.id), eq(messages.transcriptionStatus, 'pending')));
     logger.warn({ messageId: row.id, status: error.status }, 'voice note could not be transcribed');
+    await runEffects([draftTriggerEffect(row.conversationId, { delaySeconds: 3 })]);
   }
 }

@@ -80,7 +80,7 @@ export class SendRefused extends Error {
   }
 }
 
-async function isDraftStale(tx: Tx, conversationId: string, triggerMessageIds: readonly string[]): Promise<boolean> {
+export async function isDraftStale(tx: Tx | Db, conversationId: string, triggerMessageIds: readonly string[]): Promise<boolean> {
   const triggers = triggerMessageIds.length === 0 ? sql`NULL::uuid` : sql.join(triggerMessageIds.map((id) => sql`${id}::uuid`), sql`, `);
   const rows = await tx.execute<{ stale: boolean }>(sql`
     SELECT EXISTS (

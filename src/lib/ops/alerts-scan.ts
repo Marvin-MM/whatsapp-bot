@@ -8,6 +8,7 @@ import { logger } from '@/lib/logger';
 import { enqueueOn, toJobId } from '@/lib/queue/enqueue';
 import { getQueue } from '@/lib/queue/queues';
 import { EXPIRING_SOON_MS } from '@/lib/conversations/window';
+import { DRAFT_TRIGGER_TYPES, draftJobOptions } from '@/lib/drafts/trigger';
 import { transitionMessage } from '@/lib/state/message-machine';
 
 /**
@@ -19,7 +20,11 @@ import { transitionMessage } from '@/lib/state/message-machine';
  *     pre-stamp error). Nothing was sent, so re-enqueueing is safe. A template whose job is gone cannot be rebuilt (its values
  *     are not stored): it fails visibly.
  *  3. A customer waiting on a reply whose 24h window closes within two hours.
+ *  4. A customer message nobody drafted for (the draft job was lost: Redis flushed, the enqueue failed after the commit): drafted once more.
  */
+
+/** A customer message older than this with no draft covering it is treated as a lost draft job. */
+export const DRAFT_STALE_MS = 10 * 60 * 1000;
 
 /** A real send is over in 20 s (our abort). Past this a stamp without an answer means the worker is gone. */
 export const STAMP_STALE_MS = 3 * 60 * 1000;
@@ -27,6 +32,7 @@ export const STAMP_STALE_MS = 3 * 60 * 1000;
 export const UNSTAMPED_STALE_MS = 5 * 60 * 1000;
 
 export interface ScanResult {
+  draftsRequeued: number;
   parkedUnknown: number;
   requeued: number;
   templatesFailed: number;
@@ -128,13 +134,43 @@ async function alertExpiringWindows(db: Db, now: Date): Promise<number> {
   return rows.length;
 }
 
-export async function scanSends(options: { now?: Date; db?: Db; queue?: Queue } = {}): Promise<ScanResult> {
+async function requeueMissingDrafts(db: Db, queue: Queue, now: Date): Promise<number> {
+  const types = sql.join(DRAFT_TRIGGER_TYPES.map((type) => sql`${type}`), sql`, `);
+  const rows = await db.execute<{ conversation_id: string; message_id: string }>(sql`
+    SELECT DISTINCT ON (m.conversation_id) m.conversation_id, m.id AS message_id
+    FROM messages m
+    JOIN conversations c ON c.id = m.conversation_id
+    WHERE m.direction = 'inbound' AND m.provenance = 'customer' AND m.deleted_at IS NULL AND m.type IN (${types})
+      AND m.created_at < ${new Date(now.getTime() - DRAFT_STALE_MS).toISOString()}::timestamptz
+      AND c.window_expires_at > ${now.toISOString()}::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM settings WHERE ai_paused)
+      AND m.occurred_at > coalesce((SELECT max(o.occurred_at) FROM messages o WHERE o.conversation_id = m.conversation_id AND o.direction = 'outbound' AND o.status <> 'failed'), '-infinity'::timestamptz)
+      AND NOT EXISTS (SELECT 1 FROM drafts d WHERE d.conversation_id = m.conversation_id AND m.id = ANY(d.trigger_message_ids) AND d.status IN ('pending','scheduled','failed','approved','edited','rejected'))
+    ORDER BY m.conversation_id, m.occurred_at
+    LIMIT 20
+  `);
+  let requeued = 0;
+  for (const row of rows) {
+    // Once per message: a draft that keeps failing is the failed-draft row's business, not an endless loop of retries.
+    const claimed = await db.execute<{ id: string }>(sql`
+      INSERT INTO notifications (id, kind, dedupe_key) VALUES (gen_random_uuid(), 'draft_requeue', ${`draft_requeue:${row.message_id}`})
+      ON CONFLICT (dedupe_key) DO NOTHING RETURNING id
+    `);
+    if (claimed.length === 0) continue;
+    await enqueueOn(queue, 'draft', { conversationId: row.conversation_id }, draftJobOptions(row.conversation_id, 1000));
+    requeued += 1;
+  }
+  return requeued;
+}
+
+export async function scanSends(options: { now?: Date; db?: Db; queue?: Queue; draftQueue?: Queue } = {}): Promise<ScanResult> {
   const now = options.now ?? new Date();
   const db = options.db ?? getDb();
   const queue = options.queue ?? getQueue('outbound-send');
+  const draftsRequeued = await requeueMissingDrafts(db, options.draftQueue ?? getQueue('generate-draft'), now);
   const parkedUnknown = await parkStampedAsUnknown(db, now);
   const { requeued, templatesFailed } = await requeueUnstamped(db, queue, now);
   const windowsExpiring = await alertExpiringWindows(db, now);
-  if (parkedUnknown + requeued + templatesFailed > 0) logger.warn({ parkedUnknown, requeued, templatesFailed }, 'alerts-scan repaired messages');
-  return { parkedUnknown, requeued, templatesFailed, windowsExpiring };
+  if (parkedUnknown + requeued + templatesFailed + draftsRequeued > 0) logger.warn({ parkedUnknown, requeued, templatesFailed, draftsRequeued }, 'alerts-scan repaired messages');
+  return { draftsRequeued, parkedUnknown, requeued, templatesFailed, windowsExpiring };
 }

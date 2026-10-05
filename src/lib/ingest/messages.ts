@@ -3,6 +3,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { Tx } from '@/lib/db';
 import { messages } from '@/lib/db/schema';
 import { supersedeDraftsTriggeredBy, supersedeOpenDrafts } from '@/lib/drafts/supersede';
+import { DRAFT_TRIGGER_TYPES, draftTriggerEffect } from '@/lib/drafts/trigger';
 import type { MessageItem, WebhookMessage } from '@/lib/whatsapp/webhook-schema';
 import { type IngestContext, type HandlerResult, RetryLaterError, nothing } from './context';
 import { conflictEffects, resolveContact } from './contacts';
@@ -130,11 +131,14 @@ export async function ingestInboundMessage(tx: Tx, item: MessageItem, ctx: Inges
   if (insertedId === undefined) {
     // Replay: nothing new to tell the dashboard, but a media download that never got enqueued must still happen.
     const [existing] = await tx
-      .select({ id: messages.id, mediaId: messages.mediaId, mediaPath: messages.mediaPath })
+      .select({ id: messages.id, mediaId: messages.mediaId, mediaPath: messages.mediaPath, type: messages.type })
       .from(messages)
       .where(eq(messages.wamid, message.id))
       .limit(1);
     if (existing?.mediaId && !existing.mediaPath) effects.push(mediaJob(existing.id));
+    // The first run may have committed and then failed to enqueue the draft job: derive it again (the debounce and the job's own
+    // "is there anything unanswered" check make a surplus job harmless).
+    if (existing && (DRAFT_TRIGGER_TYPES as readonly string[]).includes(existing.type)) effects.push(draftTriggerEffect(conversationId));
     return { effects };
   }
 
@@ -156,5 +160,7 @@ export async function ingestInboundMessage(tx: Tx, item: MessageItem, ctx: Inges
     { type: 'publish', event: { type: 'message:new', payload: { conversationId, messageId: insertedId } } },
     { type: 'publish', event: { type: 'conversation:updated', payload: { conversationId } } },
   );
+  // One draft for the whole burst (spec 6.6): the job is debounced per conversation, so each message restarts the timer.
+  if ((DRAFT_TRIGGER_TYPES as readonly string[]).includes(mapped.type)) effects.push(draftTriggerEffect(conversationId));
   return { effects };
 }

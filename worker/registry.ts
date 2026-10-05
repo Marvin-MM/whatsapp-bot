@@ -1,6 +1,7 @@
 import type { Processor } from 'bullmq';
 import type { QueueName } from '@/lib/queue/names';
 import { downloadMediaProcessor } from './processors/download-media';
+import { generateDraftProcessor } from './processors/generate-draft';
 import { outboundSendProcessor } from './processors/outbound-send';
 import { processWebhookEventProcessor } from './processors/process-webhook-event';
 import { scheduledProcessor } from './processors/scheduled';
@@ -20,6 +21,7 @@ export interface WorkerRegistration {
 export const WORKER_REGISTRATIONS: readonly WorkerRegistration[] = [
   { queue: 'process-webhook-event', processor: processWebhookEventProcessor },
   { queue: 'download-media', processor: downloadMediaProcessor },
+  { queue: 'generate-draft', processor: generateDraftProcessor },
   { queue: 'outbound-send', processor: outboundSendProcessor },
   { queue: 'style-extract', processor: styleExtractProcessor },
   { queue: 'scheduled', processor: scheduledProcessor },
