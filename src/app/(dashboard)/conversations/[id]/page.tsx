@@ -7,12 +7,15 @@ import { MessageBubble } from '@/components/conversations/message-bubble';
 import { ConversationStatusBadge } from '@/components/conversations/status-badge';
 import { ThreadScroller } from '@/components/conversations/thread-scroller';
 import { WindowBadge, WindowDetail } from '@/components/conversations/window-badge';
+import { DraftPrompt } from '@/components/approvals/draft-prompt';
 import { Composer } from '@/components/send/composer';
 import { groupByDay } from '@/lib/conversations/group';
 import { isUuid, parseThreadParams } from '@/lib/conversations/params';
 import { getThread } from '@/lib/conversations/queries';
 import { getShellState } from '@/lib/dashboard/shell-state';
 import { getDb } from '@/lib/db';
+import { getOpenDraftId } from '@/lib/drafts/queries';
+import { loadUnanswered } from '@/lib/drafts/unanswered';
 import { getEnv } from '@/lib/env';
 import { requireOwnerPage } from '@/server/require-owner';
 
@@ -35,7 +38,10 @@ export default async function ConversationPage({
   const now = new Date();
   const timeZone = getEnv().OWNER_TIMEZONE;
   const { conversation, messages } = thread;
-  const { sendingPaused } = await getShellState();
+  const { sendingPaused, aiPaused } = await getShellState();
+  const db = getDb();
+  const openDraftId = await getOpenDraftId(db, id);
+  const canRequestDraft = openDraftId === null && (await loadUnanswered(db, id)).length > 0;
   const last = messages.at(-1);
 
   const rows = groupByDay(messages, now, timeZone);
@@ -113,13 +119,16 @@ export default async function ConversationPage({
           bottom margin cancels the page's own bottom padding (made for the tab bar), so the box sits in exactly the same place
           whether it is stuck or has scrolled into its natural position at the end of the thread. */}
       <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-20 -mx-4 -mb-[max(0px,calc(2.5rem-env(safe-area-inset-bottom)))] max-h-[55dvh] overflow-y-auto border-t border-border bg-background px-4 py-3 md:bottom-0 md:-mx-8 md:-mb-10 md:px-8">
-        <Composer
-          conversationId={conversation.id}
-          windowExpiresAt={conversation.windowExpiresAt}
-          serverNow={now}
-          sendingPaused={sendingPaused}
-          canReceive={conversation.canReceive}
-        />
+        <div className="space-y-3">
+          <DraftPrompt conversationId={conversation.id} openDraftId={openDraftId} canRequest={canRequestDraft} aiPaused={aiPaused} />
+          <Composer
+            conversationId={conversation.id}
+            windowExpiresAt={conversation.windowExpiresAt}
+            serverNow={now}
+            sendingPaused={sendingPaused}
+            canReceive={conversation.canReceive}
+          />
+        </div>
       </div>
     </div>
   );

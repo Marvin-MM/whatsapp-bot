@@ -5,13 +5,13 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { NavIconView } from './nav-icon';
-import { NAV_ITEMS, isActivePath } from './nav-items';
+import { NAV_ITEMS, type NavBadges, badgeFor, formatBadge, isActivePath } from './nav-items';
 
 const PRIMARY = NAV_ITEMS.filter((item) => item.primary);
 const SECONDARY = NAV_ITEMS.filter((item) => !item.primary);
 
 /** Mobile tab bar: the four daily destinations plus a "More" menu. Hidden on md+ screens. */
-export function BottomNav() {
+export function BottomNav({ badges }: { badges?: NavBadges }) {
   const pathname = usePathname();
   const secondaryActive = SECONDARY.some((item) => isActivePath(pathname, item.href));
 
@@ -23,6 +23,7 @@ export function BottomNav() {
       <ul className="grid grid-cols-5">
         {PRIMARY.map((item) => {
           const active = isActivePath(pathname, item.href);
+          const badge = badgeFor(badges, item.href);
           return (
             <li key={item.href}>
               <Link
@@ -33,7 +34,15 @@ export function BottomNav() {
                   active ? 'text-foreground' : 'text-muted-foreground',
                 )}
               >
-                <NavIconView name={item.icon} />
+                <span className="relative">
+                  <NavIconView name={item.icon} />
+                  {badge > 0 ? (
+                    <span className="absolute -right-3 -top-1.5 min-w-4 rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-4 text-primary-foreground">
+                      {formatBadge(badge)}
+                      <span className="sr-only"> waiting</span>
+                    </span>
+                  ) : null}
+                </span>
                 {item.label}
               </Link>
             </li>

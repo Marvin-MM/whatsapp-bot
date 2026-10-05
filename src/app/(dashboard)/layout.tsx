@@ -17,12 +17,13 @@ export const dynamic = 'force-dynamic';
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   await requireOwnerPage();
   const state = await getShellState();
+  const badges = { '/approvals': state.pendingDrafts };
 
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[14rem_1fr]">
       <aside className="hidden border-r border-border bg-card md:sticky md:top-0 md:flex md:h-dvh md:flex-col md:self-start">
         <div className="px-6 py-5 text-sm font-semibold tracking-tight">WhatsApp Assistant</div>
-        <SidebarNav />
+        <SidebarNav badges={badges} />
       </aside>
 
       <div className="flex min-h-dvh min-w-0 flex-col">
@@ -46,7 +47,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         <main className="flex-1 px-4 py-6 pb-24 md:px-8 md:pb-10">{children}</main>
       </div>
 
-      <BottomNav />
+      <BottomNav badges={badges} />
     </div>
   );
 }

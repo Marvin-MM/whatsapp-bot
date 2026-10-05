@@ -25,3 +25,14 @@ export function isActivePath(pathname: string, href: string): boolean {
   if (href === '/') return pathname === '/';
   return pathname === href || pathname.startsWith(`${href}/`);
 }
+
+/** Counts shown next to a destination (href -> number), e.g. drafts waiting on the Approvals tab. Zero shows nothing. */
+export type NavBadges = Readonly<Record<string, number>>;
+
+export function badgeFor(badges: NavBadges | undefined, href: string): number {
+  const value = badges?.[href] ?? 0;
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+}
+
+/** "99+" keeps the badge a fixed width however long the queue is. */
+export const formatBadge = (count: number): string => (count > 99 ? '99+' : String(count));

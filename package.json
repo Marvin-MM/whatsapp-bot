@@ -20,6 +20,7 @@
     "eval:drafts": "tsx --conditions=react-server --env-file-if-exists=.env scripts/eval-drafts.ts",
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:ai": "vitest run --config vitest.ai.config.ts",
     "typecheck": "tsc --noEmit",
     "lint": "eslint ."
   },

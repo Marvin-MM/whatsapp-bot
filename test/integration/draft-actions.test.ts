@@ -251,10 +251,10 @@ describe('approveDraft (the real server action)', () => {
     expect((await draftRow(draftId))?.status).toBe('pending');
   });
 
-  it('refuses an empty text (clearing the box is not an approval) and a no-reply draft whose content is empty', async () => {
+  it('refuses an empty text: clearing the box is not an approval, even on a "needs no reply" draft', async () => {
     await signedIn();
     const { conversationId, triggerId } = await customer();
-    const draftId = await makeDraft(conversationId, { triggers: [triggerId], content: '', noReplyNeeded: true });
+    const draftId = await makeDraft(conversationId, { triggers: [triggerId], content: 'Webale 🙏', noReplyNeeded: true });
     expect(await approveDraft({ draftId, text: '   ', idempotencyKey: key('em') })).toMatchObject({ ok: false, error: { reason: 'empty_message' } });
     expect(await outbound()).toHaveLength(0);
   });
@@ -489,13 +489,14 @@ describe('the approval queue and draft details', () => {
     expect(await listApprovalQueue(getDb())).toEqual([]);
   });
 
-  it('counts open drafts for the overview, leaving out the ones that need no reply', async () => {
+  it('counts open drafts for the badge and the overview: pending and scheduled (including "needs no reply" ones, which still wait for a dismiss), never failed or decided ones', async () => {
     const { conversationId, triggerId } = await customer();
     await makeDraft(conversationId, { triggers: [triggerId] });
     await makeDraft(conversationId, { triggers: [triggerId], status: 'scheduled' });
-    await makeDraft(conversationId, { triggers: [triggerId], noReplyNeeded: true, content: '' });
+    await makeDraft(conversationId, { triggers: [triggerId], noReplyNeeded: true, content: 'Webale 🙏' });
     await makeDraft(conversationId, { triggers: [triggerId], status: 'failed', content: '' });
-    expect(await countOpenDrafts(getDb())).toBe(2);
+    await makeDraft(conversationId, { triggers: [triggerId], status: 'approved' });
+    expect(await countOpenDrafts(getDb())).toBe(3);
   });
 
   it('intent stats: sent / edited / median edit distance over 90 days, for THIS intent only', async () => {

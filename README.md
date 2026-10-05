@@ -5,12 +5,12 @@ the system drafts replies in the owner's own writing style, keeps a rolling summ
 owner owes, and shows everything on a real-time, mobile-first dashboard. Nothing is sent without the owner's explicit action
 (autopilot is a later, opt-in, gated phase).
 
-> **Status: Phase 3 of 8 (corpus, style, evaluation).** On top of Phase 2 (reading, sending, kill switches, Telegram alerts): you can
-> **import your past WhatsApp chats**, have the system **learn your writing style** (a readable, versioned guide you activate yourself), write the
-> **business profile** that is the only source of facts it may state, and **measure** how close its drafts get to what you really wrote.
-> **Nothing drafts replies for you yet** (that is Phase 4); the machinery and the measuring stick are what this phase delivers. What is and is
-> not done is in [`docs/phase-reports/phase-3.md`](docs/phase-reports/phase-3.md); the checks only you can do (real chats, the real model) are in
-> [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately differs from the original spec is in [`DECISIONS.md`](DECISIONS.md).
+> **Status: Phase 4 of 8 (drafting and approvals).** On top of Phase 3 (import, style, evaluation): when a customer writes, the system now **drafts a
+> reply in your style** and shows it on **Approvals** for you to approve, edit, reject or regenerate. **Nothing is ever sent without your explicit
+> approval**, and a draft with a `[[placeholder]]` (a fact it did not have) cannot be sent until you fill it in. Summaries and tasks are Phase 5, the
+> optional autopilot Phase 7. What is and is not done is in [`docs/phase-reports/phase-4.md`](docs/phase-reports/phase-4.md); the checks only you can do
+> (real chats, the real model, a real phone) are in [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately differs from the
+> original spec is in [`DECISIONS.md`](DECISIONS.md).
 
 ## Privacy: who sees customer messages
 
@@ -134,6 +134,32 @@ your Telegram chat. They are **notifications only** and never contain message te
    and writes `eval/results/<time>.md`. Run it before and after any change to the prompt, the model or the style guide: a change ships only
    if the median edit distance did not get worse and no new invented facts appeared. The report contains real messages: keep it local.
 
+## Approving drafts
+
+When a customer writes, a draft appears under **Approvals** a few seconds after they stop typing (`DRAFT_DEBOUNCE_SECONDS`, 25 by default; a burst of
+messages is one draft). If Telegram is set up you get one "draft ready" ping with a link (never the customer's name or words), at most one per
+conversation per 10 minutes, a digest when more than 5 are waiting, silent during quiet hours.
+
+- **Approve and send** sends the draft exactly as written. Edit the text first and the button becomes **Send edited reply**; your edit is remembered
+  as an edit (the dashboard shows how often you change each kind of draft, so you can judge how far to trust it). **Reject** drops it (the customer is
+  still waiting; **Draft a reply** on the conversation asks for a new one). **Regenerate** throws it away and writes a fresh one.
+- **Yellow badges are warnings, not blocks**: a complaint, an angry customer, money or a promise, a message that tries to give the assistant
+  instructions ("ignore previous instructions...": flagged by the model AND by a pattern check of our own), a voice note it could not read, a customer
+  asking whether they are talking to a bot (the draft never denies it). **A `[[placeholder]]` is a block**: it is a fact the assistant did not have;
+  click the chip, type the real answer, then send.
+- **Stale draft**: if the customer wrote again after a draft was made, the draft is replaced automatically; in the rare case one slips through, the
+  card says so and offers **Send anyway** instead of Approve.
+- **Keyboard**: `a` approve, `e` edit, `r` reject, `g` regenerate, `j`/`k` next/previous. Ignored while you type; Esc leaves the box.
+- **If drafting fails** (the model is down, the key is wrong) the card says so and offers **Try again**; replying by hand always works, and a failed
+  draft raises an alert. Turn **AI** off in Settings to stop drafting without stopping anything else.
+
+## Testing against the real model
+
+`pnpm test:ai` asks the real draft model a handful of adversarial and fact-checking questions (an injection, a request for its instructions, "are you a
+bot?", a price it was not given) three times each and prints how many times each rule held. It needs `GROQ_API_KEY` and `LLM_MODEL_DRAFT` (in the
+environment or in `.env`), costs a few cents, sends invented text only, and is never run by CI. A pass at 3/3 and a pass at 2/3 are different news:
+read the numbers. It uses the throwaway `_test` database.
+
 ## Scripts
 
 | Command | What it does |
@@ -148,6 +174,7 @@ your Telegram chat. They are **notifications only** and never contain message te
 | `pnpm typecheck` / `pnpm lint` | `tsc --noEmit` / ESLint |
 | `pnpm test` | Unit tests (no services needed) |
 | `pnpm test:integration` | Integration tests against real Postgres + Redis (database must end in `_test`, Redis db 15) |
+| `pnpm test:ai` | Opt-in: behaviour of the REAL draft model (needs `GROQ_API_KEY`, `LLM_MODEL_DRAFT`; a few cents) |
 
 ## How it fits together
 
@@ -170,7 +197,7 @@ your Telegram chat. They are **notifications only** and never contain message te
 | 1 | WhatsApp webhook ingest (incl. Coexistence echoes/history), media, live read-only dashboard | done (real-Meta checks: `docs/ACCEPTANCE.md`) |
 | 2 | Manual send path, templates, kill switches, Telegram notifications | done (real-Meta checks: `docs/ACCEPTANCE.md`) |
 | 3 | Chat import, style extraction, few-shot retrieval, evaluation harness | done (real-model checks: `docs/ACCEPTANCE.md`) |
-| 4 | Drafting + `/approvals` | |
+| 4 | Drafting + `/approvals` | done (real-model and real-phone checks: `docs/ACCEPTANCE.md`) |
 | 5 | Summaries, tasks, follow-ups | |
 | 6 | Analytics, hardening, production deploy, backups | |
 | 7 | Autopilot (gated by measured quality) | |

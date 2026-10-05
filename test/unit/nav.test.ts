@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NAV_ITEMS, isActivePath } from '@/components/shared/nav-items';
+import { NAV_ITEMS, badgeFor, formatBadge, isActivePath } from '@/components/shared/nav-items';
 
 describe('navigation (spec section 12)', () => {
   it('has every dashboard destination the spec lists, once each', () => {
@@ -36,5 +36,23 @@ describe('isActivePath', () => {
   it('does not confuse sections that share a prefix', () => {
     expect(isActivePath('/tasks-archive', '/tasks')).toBe(false);
     expect(isActivePath('/style', '/settings')).toBe(false);
+  });
+});
+
+describe('nav badges', () => {
+  it('shows nothing for zero, missing, negative or non-finite counts, and the count otherwise', () => {
+    expect(badgeFor(undefined, '/approvals')).toBe(0);
+    expect(badgeFor({}, '/approvals')).toBe(0);
+    expect(badgeFor({ '/approvals': 0 }, '/approvals')).toBe(0);
+    expect(badgeFor({ '/approvals': -3 }, '/approvals')).toBe(0);
+    expect(badgeFor({ '/approvals': Number.NaN }, '/approvals')).toBe(0);
+    expect(badgeFor({ '/approvals': 4 }, '/approvals')).toBe(4);
+    expect(badgeFor({ '/approvals': 4 }, '/tasks')).toBe(0);
+  });
+
+  it('caps the label so the badge keeps its width', () => {
+    expect(formatBadge(7)).toBe('7');
+    expect(formatBadge(99)).toBe('99');
+    expect(formatBadge(100)).toBe('99+');
   });
 });

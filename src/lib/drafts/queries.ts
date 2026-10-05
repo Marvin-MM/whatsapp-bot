@@ -65,9 +65,18 @@ export async function listApprovalQueue(db: Db): Promise<QueueItem[]> {
   }));
 }
 
+/** Drafts waiting for a decision: the same set the approvals queue opens with (a "needs no reply" draft still waits for a dismiss), so the badge never disagrees with the page. */
 export async function countOpenDrafts(db: Db): Promise<number> {
-  const rows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM drafts WHERE status IN ('pending', 'scheduled') AND NOT no_reply_needed`);
+  const rows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM drafts WHERE status IN ('pending', 'scheduled')`);
   return rows[0]?.n ?? 0;
+}
+
+/** The conversation's open draft, if any (the thread links to it instead of offering to make another). Newest wins. */
+export async function getOpenDraftId(db: Db, conversationId: string): Promise<string | null> {
+  const rows = await db.execute<{ id: string }>(sql`
+    SELECT id FROM drafts WHERE conversation_id = ${conversationId}::uuid AND status IN ('pending', 'scheduled') ORDER BY created_at DESC, id DESC LIMIT 1
+  `);
+  return rows[0]?.id ?? null;
 }
 
 export interface IntentStats {

@@ -88,7 +88,7 @@ export function metaCodeSuffix(code: string | null): string {
   return code !== null && /^\d+$/.test(code) ? ` (code ${code})` : '';
 }
 
-export function MessageBubble({ message, timeZone }: { message: ThreadMessage; timeZone: string }) {
+export function MessageBubble({ message, timeZone, highlight = false }: { message: ThreadMessage; timeZone: string; highlight?: boolean }) {
   const inbound = message.direction === 'inbound';
   const provenance = inbound ? undefined : PROVENANCE_LABEL[message.provenance];
 
@@ -98,9 +98,13 @@ export function MessageBubble({ message, timeZone }: { message: ThreadMessage; t
         className={cn(
           'max-w-[88%] space-y-1.5 whitespace-pre-wrap break-words rounded-2xl px-3 py-2 text-sm sm:max-w-[75%]',
           inbound ? 'rounded-bl-sm bg-muted text-foreground' : 'rounded-br-sm bg-primary text-primary-foreground',
+          highlight && 'ring-2 ring-info',
         )}
       >
-        <span className="sr-only">{inbound ? 'Customer: ' : 'You: '}</span>
+        <span className="sr-only">
+          {highlight ? 'The draft answers this message. ' : ''}
+          {inbound ? 'Customer: ' : 'You: '}
+        </span>
         {message.replyTo ? <Quote replyTo={message.replyTo} /> : null}
         <Media message={message} />
         <Body message={message} />

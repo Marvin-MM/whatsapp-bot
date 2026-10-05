@@ -4,6 +4,7 @@ import type { Db } from '@/lib/db';
 import { conversations, messages, settings, styleGuides } from '@/lib/db/schema';
 import { getEnv } from '@/lib/env';
 import { selectFewShot } from './fewshot';
+import { anyLooksLikePromptInjection } from './injection';
 import { chatModelId } from './models';
 import { type ConversationLine, DRAFT_PROMPT_VERSION, type DraftContext, HISTORY_LIMIT, draftInstructions, draftUserPrompt } from './prompts/draft';
 import { runStructured } from './run';
@@ -166,6 +167,10 @@ export async function generateDraftFromContext(
     ...(options.draftId ? { draftId: options.draftId } : {}),
     db,
   });
-  const checked = postValidate(result.output, loaded.unreadableMedia ? ['unreadable_media'] : []);
+  // Flags the pipeline adds itself, because they are about the INPUT and a model that was successfully injected would not report it.
+  const forced: RiskFlag[] = [];
+  if (loaded.unreadableMedia) forced.push('unreadable_media');
+  if (anyLooksLikePromptInjection(loaded.context.burst.filter((line) => line.from === 'customer').map((line) => line.text))) forced.push('prompt_injection');
+  const checked = postValidate(result.output, forced);
   return { ...checked, model: modelId, promptVersion: DRAFT_PROMPT_VERSION, inputTokens: result.inputTokens, outputTokens: result.outputTokens, latencyMs: result.latencyMs };
 }

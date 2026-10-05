@@ -105,11 +105,20 @@ that has never failed has proven nothing: mutation-check security tests. Real-mo
   `fewshot-sql.ts` (a parity test keeps them equal: change both); the draft prompt is versioned (`DRAFT_PROMPT_VERSION`): any change to it, the
   model or the style guide requires `pnpm eval:drafts` and a note in DECISIONS.md; imported messages are provenance `imported` on BOTH sides and
   can never open the 24h window.
+- **Drafts and approvals (Phase 4)**: ONE `generate-draft` job per conversation (debounce via deduplication `replace`+`extend`); the job answers the
+  unanswered set (`loadUnanswered`) and re-checks under the conversation lock at completion (discard when the set changed, the owner replied, or
+  another generation covered it). A draft decision is an `ownerAction` through `queueMessage` (`src/lib/drafts/decide.ts`): "edited" is decided on
+  TRIMMED text exactly as the send path decides provenance, so provenance, draft status, audit action and the answer cannot disagree; audit entries
+  never carry the text. The pipeline adds the `prompt_injection` flag itself (`ai/injection.ts`: a warning, never a gate, narrow on purpose: add
+  both an attack and an ordinary-chat case to `test/unit/prompt-injection.test.ts` when touching it). The Approvals badge, the Overview card and the
+  queue count the same set (`countOpenDrafts`). A `noReplyNeeded` draft still has a non-empty acknowledgement (the schema demands it). Opt-in real
+  model suite: `pnpm test:ai` (reads only `GROQ_API_KEY` and `LLM_MODEL_DRAFT` from `.env`: the suite truncates the `_test` database).
 - **Notifications**: alerts go through `raiseAlert` (deduped); the Telegram sink is registered in the worker only; `info` alerts are
   dashboard-only; quiet hours silence everything but critical; no message bodies in any notification or audit entry.
 - **Test infra**: `setupIngestHarness()` for ingest tests (not `use*`: the React-hooks lint rule trips on the prefix). Every guard test is
   mutation-checked (`scratchpad` script pattern: break the code, watch the right test fail, restore). Verify UI in Chromium against
-  `pnpm build`, not only in tests: Phase 1 found five real defects that way.
+  `pnpm build`, not only in tests (Phase 1 found five real defects that way, Phase 4 five more), and LOOK at the screenshots: an assertion that
+  `scrollWidth <= innerWidth` passed while the page was visibly clipped, because the browser had zoomed out to hide the overflow. Check element boxes.
 
 ## Layout
 `src/app` routes - `src/actions` server actions - `src/components` UI - `src/server` framework-bound server helpers -
