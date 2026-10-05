@@ -9,7 +9,6 @@ const NEAR_BOTTOM_PX = 160;
  * bottom. If they have scrolled up to read history, a new message must NOT yank them back down.
  */
 export function ThreadScroller({ lastMessageId, children }: { lastMessageId: string | null; children: ReactNode }) {
-  const end = useRef<HTMLDivElement>(null);
   const nearBottom = useRef(true);
 
   useEffect(() => {
@@ -21,14 +20,10 @@ export function ThreadScroller({ lastMessageId, children }: { lastMessageId: str
   }, []);
 
   useEffect(() => {
-    if (nearBottom.current) end.current?.scrollIntoView({ block: 'end' });
+    // To the very bottom of the page, not to a marker above the reply box: the box is sticky and would otherwise sit on top of the
+    // newest message. At the bottom of the document it is in normal flow, below the thread.
+    if (nearBottom.current) window.scrollTo({ top: document.documentElement.scrollHeight });
   }, [lastMessageId]);
 
-  return (
-    <>
-      {children}
-      {/* scroll-mb clears the fixed bottom navigation on phones, so the newest message is not hidden beneath it. */}
-      <div ref={end} aria-hidden="true" className="scroll-mb-28 md:scroll-mb-8" />
-    </>
-  );
+  return <>{children}</>;
 }

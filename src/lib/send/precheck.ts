@@ -10,7 +10,7 @@ import { isWindowOpen } from '@/lib/conversations/window';
 export const MAX_TEXT_LENGTH = 4096;
 
 /** A fact the drafter did not have becomes `[[a placeholder]]` and BLOCKS sending until the owner replaces it. */
-const PLACEHOLDER = /\[\[[^\]]*\]\]/;
+export const PLACEHOLDER_PATTERN = /\[\[[^\]]*\]\]/;
 
 export type PrecheckCode =
   | 'sending_paused'
@@ -64,7 +64,7 @@ export function precheck(input: PrecheckInput): PrecheckResult {
   const content = input.message.kind === 'text' ? input.message.content : input.message.renderedContent;
   if (content.trim() === '') return refuse('empty_message', 'The message is empty.');
   if (content.length > MAX_TEXT_LENGTH) return refuse('message_too_long', `The message is ${content.length} characters; WhatsApp allows ${MAX_TEXT_LENGTH}.`);
-  if (PLACEHOLDER.test(content)) return refuse('placeholder_unresolved', 'The message still has a [[placeholder]] for something we did not know. Replace it before sending.');
+  if (PLACEHOLDER_PATTERN.test(content)) return refuse('placeholder_unresolved', 'The message still has a [[placeholder]] for something we did not know. Replace it before sending.');
 
   // Only an approved template may be sent outside the window; free text may not.
   if (input.message.kind === 'text' && !isWindowOpen(input.windowExpiresAt, input.now)) {

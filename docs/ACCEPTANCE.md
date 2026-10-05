@@ -77,3 +77,51 @@ Meta's own pages were unreachable when this was built, so payload shapes were re
 ### 8. Sign off
 
 Tell me: which steps passed, which surprised you, and attach any failing `real/*.json`. Phase 2 (sending) starts from there.
+
+---
+
+## Phase 2: sending, templates, Telegram
+
+Everything below needs the real Meta and Telegram. The sandbox proved the logic against mocks of their HTTP APIs; it cannot prove that Meta
+answers the way the mocks do. **Do these on a number you can afford to experiment with first.**
+
+### 9. Telegram
+
+**Do** Create the bot (README, "Telegram alerts"), set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`, restart the worker, then Settings -> **Send a test message**.
+**Expect** "Test message sent" in Settings and the message in your Telegram chat.
+**If not** the Settings message says why (`chat not found` = wrong chat id: message the bot first, then re-read `getUpdates`; `Unauthorized` = wrong token).
+
+### 10. A first real reply
+
+**Do** From another phone, message your business number, open the conversation, type a reply, press Send.
+**Expect** within seconds: one tick (sent), then two (delivered) and blue (read) as the other phone sees it; the other phone shows the reply; the bubble says nothing odd.
+**If not** a failed bubble shows Meta's reason in plain words and, in Settings -> "Messages that need attention", the same. Send me the **error code** if the wording looks wrong: the table in `src/lib/whatsapp/errors.ts` was written without Meta's reference (D-051).
+
+### 11. The 24-hour window and templates
+
+**Do** (a) Watch the badge in an open conversation for a few minutes: it should count down by itself. (b) In a conversation whose last customer message is older than 24 h, try the box. (c) Create and get approved one **text** template in WhatsApp Manager (e.g. `order_ready`: "Hi {{1}}, your order {{2}} is ready"), open the template picker, fill it in and send it.
+**Expect** (a) the minutes tick down without reloading; (b) the text box is replaced by the template picker with the reason; (c) the picker lists your template, shows exactly what the customer will read, the customer receives it, and the bubble shows the filled-in text.
+**If not** (c) not listed = the access token lacks `whatsapp_business_management`, or the template is not APPROVED (it is listed under "Not available" with the reason). Sent but not delivered = send me the status error code.
+
+### 12. A customer with no phone number (BSUID only)
+
+**Do** If any customer messages you through a username (no phone number in the conversation header), reply to them.
+**Expect** the reply is delivered.
+**If not** this is the single most likely wrong assumption in the send path (D-054): the request uses `recipient` instead of `to` for such customers, and the field name/format is unverified. Tell me the error Meta returned.
+
+### 13. Failures and safety nets (do these once; they take ten minutes)
+
+- **Kill switch.** Settings -> Pause sending, then try to send: refused with "Sending is paused". Resume.
+- **Worker stopped.** Stop the worker, send a reply: it shows "Sending" (clock) and appears under "Messages that need attention". Start the worker: it is sent (the job waits in Redis). If the window closed while it waited, it fails with that reason instead of being sent.
+- **Network cut mid-send.** Hardest to do on purpose; if it ever happens you will see "Not confirmed": check your phone, press **It arrived** or **It did not arrive: send again**. Tell me whether the message really had arrived.
+- **Bad token.** Put a wrong `WHATSAPP_ACCESS_TOKEN`, restart, Settings -> "Check now". Expect "Token rejected" and a **critical** Telegram alert. Put the right one back.
+- **Quiet hours.** Set quiet hours to include now, trigger a non-critical alert (hard to do on purpose): nothing arrives on Telegram, it is in the dashboard. A rejected token alert still arrives.
+
+### 14. Retention
+
+**Do** After 30 days (or `UPDATE webhook_events SET received_at = received_at - interval '31 days' WHERE processed_at IS NOT NULL` on a test copy and run the worker's `purge-payloads`), check `SELECT count(*) FROM webhook_events WHERE payload IS NOT NULL AND received_at < now() - interval '30 days'`.
+**Expect** 0, and the rows still exist (so a Meta replay is still recognised).
+
+### 15. Sign off
+
+Tell me which steps passed, which surprised you, and any Meta error codes you saw. Phase 3 (chat import, style, evaluation) does not depend on these, so the build continues without waiting; whatever these find goes to the front of the queue.

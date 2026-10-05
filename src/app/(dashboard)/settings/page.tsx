@@ -1,11 +1,23 @@
+import { eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
+import Link from 'next/link';
+import { KillSwitchControls } from '@/components/settings/kill-switch-controls';
+import { TelegramSettings } from '@/components/settings/telegram-settings';
+import { TokenHealth } from '@/components/settings/token-health';
+import { DeliveryStatus } from '@/components/conversations/delivery-status';
+import { metaCodeSuffix } from '@/components/conversations/message-bubble';
 import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatFullTimestamp } from '@/lib/conversations/format';
 import { getIngestHealth } from '@/lib/dashboard/ingest-health';
+import { getProblemMessages } from '@/lib/dashboard/send-health';
+import { getShellState } from '@/lib/dashboard/shell-state';
 import { getDb } from '@/lib/db';
+import { settings } from '@/lib/db/schema';
 import { getEnv } from '@/lib/env';
+import { maskPhone } from '@/lib/logger';
+import { readTokenHealth } from '@/lib/ops/token-health';
 import { requireOwnerPage } from '@/server/require-owner';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -32,13 +44,63 @@ function Stat({ label, value, tone }: { label: string; value: string | number; t
 export default async function SettingsPage() {
   await requireOwnerPage();
   const env = getEnv();
-  const health = await getIngestHealth(getDb());
+  const db = getDb();
+  const [health, shell, problems, tokenHealth] = await Promise.all([getIngestHealth(db), getShellState(), getProblemMessages(db), readTokenHealth()]);
+  const [prefs] = await db.select({ notifyTelegram: settings.notifyTelegram, quietHours: settings.quietHours }).from(settings).where(eq(settings.id, 1)).limit(1);
   const when = (date: Date | null) => (date ? formatFullTimestamp(date, env.OWNER_TIMEZONE) : 'Never');
   const webhookUrl = `${env.APP_URL.replace(/\/$/, '')}/api/webhooks/whatsapp`;
 
   return (
     <>
       <PageHeader title="Settings" description="WhatsApp connection, business profile, kill switches and audit log." />
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Kill switches</CardTitle>
+          <CardDescription>Stop things at once. Each takes effect on the very next message.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <KillSwitchControls aiPaused={shell.aiPaused} sendingPaused={shell.sendingPaused} autopilotPaused={shell.autopilotPaused} />
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Messages that need attention</CardTitle>
+          <CardDescription>Messages that failed, could not be confirmed, or are still waiting to be sent.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {problems.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Nothing. Every message you sent went through.</p>
+          ) : (
+            <ul className="divide-y divide-border text-sm">
+              {problems.map((problem) => (
+                <li key={problem.messageId} className="flex flex-col gap-1 py-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0 space-y-0.5">
+                    <p className="flex items-center gap-2">
+                      <DeliveryStatus status={problem.status} />
+                      <time dateTime={problem.at.toISOString()} className="text-xs text-muted-foreground">
+                        {formatFullTimestamp(problem.at, env.OWNER_TIMEZONE)}
+                      </time>
+                    </p>
+                    {problem.error ? (
+                      <p className="text-xs text-muted-foreground">
+                        {problem.error.message}
+                        {metaCodeSuffix(problem.error.code)}
+                      </p>
+                    ) : problem.status === 'queued' ? (
+                      <p className="text-xs text-muted-foreground">Waiting for the worker. If this stays here, check that the worker is running.</p>
+                    ) : null}
+                  </div>
+                  <Link href={`/conversations/${problem.conversationId}`} className="shrink-0 text-sm underline underline-offset-4">
+                    Open conversation
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="mb-6">
         <CardHeader>
@@ -59,6 +121,16 @@ export default async function SettingsPage() {
               Some events have waited more than ten minutes. The worker is probably not running: start it with <code>pnpm dev:worker</code>.
             </p>
           ) : null}
+
+          <section aria-labelledby="token-heading" className="space-y-2">
+            <h3 id="token-heading" className="text-sm font-semibold">
+              Access token and number
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              Sending from phone number id <code className="text-xs">{maskPhone(env.WHATSAPP_PHONE_NUMBER_ID)}</code> (Graph API {env.META_GRAPH_VERSION}).
+            </p>
+            <TokenHealth initial={tokenHealth} checkedLabel={tokenHealth ? when(new Date(tokenHealth.checkedAt)) : null} />
+          </section>
 
           <section aria-labelledby="history-heading" className="space-y-2">
             <h3 id="history-heading" className="text-sm font-semibold">
@@ -111,6 +183,20 @@ export default async function SettingsPage() {
               ))}
             </ul>
           </section>
+        </CardContent>
+      </Card>
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Telegram alerts</CardTitle>
+          <CardDescription>Be told when something needs you, without opening the dashboard.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <TelegramSettings
+            notifyTelegram={prefs?.notifyTelegram ?? true}
+            quietHours={prefs?.quietHours ?? { start: '22:00', end: '07:00' }}
+            chatIdMasked={maskPhone(env.TELEGRAM_CHAT_ID)}
+          />
         </CardContent>
       </Card>
     </>

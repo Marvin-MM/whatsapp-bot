@@ -227,6 +227,8 @@ export interface Thread {
     lastInboundAt: Date | null;
     summary: string | null;
     consecutiveAutoReplies: number;
+    /** False for a name-only imported contact: there is nobody to send to, so the composer says so instead of failing. */
+    canReceive: boolean;
   };
   /** Oldest first, ready to render top to bottom. */
   messages: ThreadMessage[];
@@ -364,6 +366,7 @@ export async function getThread(db: Db, conversationId: string, params: { before
       lastInboundAt: head.lastInboundAt,
       summary: head.summary,
       consecutiveAutoReplies: head.consecutiveAutoReplies,
+      canReceive: head.phoneE164 !== null || head.bsuid !== null,
     },
     messages,
     olderCursor: hasMore && oldest ? encodeCursor({ t: oldest.occurred_us, id: oldest.id }) : null,

@@ -94,11 +94,19 @@ that has never failed has proven nothing: mutation-check security tests. Real-mo
 - **Dedupe keys of id-less events include `entry.time`**; BullMQ ignores `add` for an existing job id (remove the failed/completed job first).
 - **Effects happen after commit** (`runEffects`); `processed_at` is stamped last; handlers are idempotent; SSE is best-effort.
 - Postgres cannot store U+0000: strip before storage (`stripNulChars`).
+- **Send path (Phase 2)**: `queueMessage` (inside the caller's transaction: lock conversation -> idempotency -> pre-check -> insert `queued`
+  -> claim draft; a refusal THROWS and rolls everything back) and `performSend` (worker: stamp `send_started_at` atomically, HTTP outside any
+  transaction, outcome in a second one; effects after commit). Only `send-message.ts` may import `whatsapp/send-api.ts` or queue an outbound
+  row (a static test enforces it). Retry only when Meta definitively did not send; timeout / reset / unreadable / 5xx-without-body =
+  `unknown`, never retried, never resent by code (the owner marks it sent or resends). Enqueue after commit through `afterCommit`.
+  A server action never makes a network call inside its transaction (templates are read from the Redis cache the picker warmed).
+- **Notifications**: alerts go through `raiseAlert` (deduped); the Telegram sink is registered in the worker only; `info` alerts are
+  dashboard-only; quiet hours silence everything but critical; no message bodies in any notification or audit entry.
 - **Test infra**: `setupIngestHarness()` for ingest tests (not `use*`: the React-hooks lint rule trips on the prefix). Every guard test is
   mutation-checked (`scratchpad` script pattern: break the code, watch the right test fail, restore). Verify UI in Chromium against
   `pnpm build`, not only in tests: Phase 1 found five real defects that way.
 
 ## Layout
 `src/app` routes - `src/actions` server actions - `src/components` UI - `src/server` framework-bound server helpers -
-`src/lib` framework-free domain (db, state, queue, realtime, auth, ai, send, whatsapp, ...) - `worker` BullMQ workers +
+`src/lib` framework-free domain (db, state, queue, realtime, auth, ai, send, whatsapp, notify, ops, ...) - `worker` BullMQ workers +
 schedulers - `scripts` seed/migrate/import/eval - `drizzle` SQL migrations (generated + hand-written grants) - `test`.

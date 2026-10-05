@@ -2,6 +2,7 @@ import 'server-only';
 import { z } from 'zod';
 import type { MessageError } from '@/lib/db/schema';
 import { getEnv } from '@/lib/env';
+import { GRAPH_ORIGIN } from './client';
 import { digitsOf } from './phone';
 import { type MetaErrorInfo, classifyMetaError } from './errors';
 
@@ -15,7 +16,6 @@ import { type MetaErrorInfo, classifyMetaError } from './errors';
  * ambiguous failure is a duplicate message to a customer).
  */
 
-const GRAPH_ORIGIN = 'https://graph.facebook.com';
 export const SEND_TIMEOUT_MS = 20_000;
 
 export type SendOutcome =

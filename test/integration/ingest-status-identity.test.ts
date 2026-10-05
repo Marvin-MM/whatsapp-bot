@@ -57,7 +57,8 @@ describe('delivery statuses', () => {
   it('records a failure with Meta’s code and reason', async () => {
     await seedOutbound('wamid.OUT.FAIL.1', 'sent');
     await ingestFixture('status-failed');
-    expect(await messageByWamid('wamid.OUT.FAIL.1')).toMatchObject({ status: 'failed', error: { kind: 'permanent', code: '131047', message: 'Re-engagement message' } });
+    expect(await messageByWamid('wamid.OUT.FAIL.1')).toMatchObject({ status: 'failed', error: { kind: 'permanent', code: '131047' } });
+    expect((await messageByWamid('wamid.OUT.FAIL.1'))?.error?.message).toMatch(/24 hours/);
   });
 
   it('a late failure report cannot undo a read (read proves delivery)', async () => {
@@ -75,6 +76,15 @@ describe('delivery statuses', () => {
   it('matches a status that beats our own wamid write through biz_opaque_callback_data, and records the wamid', async () => {
     const id = '0190aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee';
     await seedOutbound(null, 'queued', id);
+
+    await ingestFixture('status-bsuid-recipient');
+
+    expect(await messageById(id)).toMatchObject({ wamid: 'wamid.OUT.BSUID.1', status: 'delivered' });
+  });
+
+  it('heals the realistic stuck case: an `unknown` message with NO wamid is found by our callback id when Meta reports it delivered', async () => {
+    const id = '0190aaaa-bbbb-7ccc-8ddd-eeeeeeeeeeee';
+    await seedOutbound(null, 'unknown', id);
 
     await ingestFixture('status-bsuid-recipient');
 

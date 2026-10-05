@@ -3,6 +3,7 @@ import { TRANSCRIPT_LABEL, UNRELIABLE_LABEL } from '@/lib/ai/transcribe';
 import { formatClock, formatFullTimestamp } from '@/lib/conversations/format';
 import type { ThreadMessage } from '@/lib/conversations/queries';
 import { cn } from '@/lib/utils';
+import { UnknownMessageActions } from '@/components/send/unknown-message-actions';
 import { DeliveryStatus } from './delivery-status';
 
 const PROVENANCE_LABEL: Partial<Record<ThreadMessage['provenance'], string>> = {
@@ -82,6 +83,11 @@ function Quote({ replyTo }: { replyTo: NonNullable<ThreadMessage['replyTo']> }) 
   );
 }
 
+/** Meta's numeric error code helps when asking for support; our own internal reasons (`resent`, `window_closed`) are not for the owner to read. */
+export function metaCodeSuffix(code: string | null): string {
+  return code !== null && /^\d+$/.test(code) ? ` (code ${code})` : '';
+}
+
 export function MessageBubble({ message, timeZone }: { message: ThreadMessage; timeZone: string }) {
   const inbound = message.direction === 'inbound';
   const provenance = inbound ? undefined : PROVENANCE_LABEL[message.provenance];
@@ -128,10 +134,11 @@ export function MessageBubble({ message, timeZone }: { message: ThreadMessage; t
         {provenance ? <span>{provenance}</span> : null}
         {!inbound ? <DeliveryStatus status={message.status} /> : null}
       </div>
+      {!inbound && message.status === 'unknown' ? <UnknownMessageActions messageId={message.id} canResend={message.type === 'text'} /> : null}
       {!inbound && message.status === 'failed' && message.error ? (
         <p className="px-1 text-xs text-destructive">
           {message.error.message}
-          {message.error.code ? ` (code ${message.error.code})` : ''}
+          {metaCodeSuffix(message.error.code)}
         </p>
       ) : null}
     </li>

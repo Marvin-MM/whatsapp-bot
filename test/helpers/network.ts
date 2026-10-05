@@ -10,8 +10,17 @@ export interface NetworkRoutes {
   download?: (url: string) => Response | Promise<Response>;
   /** `POST https://graph.facebook.com/{version}/{phone-number-id}/messages`: may throw to simulate a network error. */
   graphSend?: (request: SentRequest, index: number) => Response | Promise<Response>;
+  /** `GET https://graph.facebook.com/{version}/{waba-id}/message_templates` (any page: the handler sees the full URL). */
+  graphTemplates?: (url: URL) => Response | Promise<Response>;
+  /** `POST https://api.telegram.org/bot<token>/sendMessage` */
+  telegram?: (request: TelegramRequest, index: number) => Response | Promise<Response>;
   /** Anything under https://api.groq.com/ */
   groq?: GroqHandler;
+}
+
+export interface TelegramRequest {
+  url: string;
+  body: Record<string, unknown>;
 }
 
 export interface SentRequest {
@@ -22,6 +31,10 @@ export interface SentRequest {
 
 export interface NetworkCalls {
   graph: string[];
+  /** Every Telegram sendMessage call. */
+  telegram: TelegramRequest[];
+  /** Every GET of the template list, as the full URL. */
+  templates: string[];
   /** Every POST to the send endpoint, in order. */
   sends: SentRequest[];
   download: string[];
@@ -33,11 +46,17 @@ export interface NetworkCalls {
  * only thing mocked. Any other host is a test bug and throws instead of leaving the machine.
  */
 export function stubNetwork(routes: NetworkRoutes): NetworkCalls {
-  const calls: NetworkCalls = { graph: [], sends: [], download: [], groq: [] };
+  const calls: NetworkCalls = { graph: [], sends: [], templates: [], telegram: [], download: [], groq: [] };
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
+      if (url.startsWith('https://api.telegram.org/')) {
+        const request: TelegramRequest = { url, body: JSON.parse(typeof init?.body === 'string' ? init.body : '{}') as Record<string, unknown> };
+        calls.telegram.push(request);
+        if (!routes.telegram) throw new Error('no telegram route in this test');
+        return routes.telegram(request, calls.telegram.length - 1);
+      }
       if (url.startsWith('https://graph.facebook.com/') && init?.method === 'POST' && new URL(url).pathname.endsWith('/messages')) {
         const headers: Record<string, string> = {};
         new Headers(init.headers).forEach((value, key) => (headers[key] = value));
@@ -46,6 +65,11 @@ export function stubNetwork(routes: NetworkRoutes): NetworkCalls {
         calls.sends.push(request);
         if (!routes.graphSend) throw new Error('no graphSend route in this test');
         return routes.graphSend(request, calls.sends.length - 1);
+      }
+      if (url.startsWith('https://graph.facebook.com/') && new URL(url).pathname.endsWith('/message_templates')) {
+        calls.templates.push(url);
+        if (!routes.graphTemplates) throw new Error('no graphTemplates route in this test');
+        return routes.graphTemplates(new URL(url));
       }
       if (url.startsWith('https://graph.facebook.com/')) {
         const id = decodeURIComponent(new URL(url).pathname.split('/').pop() ?? '');

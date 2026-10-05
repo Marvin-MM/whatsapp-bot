@@ -112,3 +112,41 @@ export function createOwnerAction(getHeaders: () => Promise<Headers>) {
     };
   };
 }
+
+export interface OwnerQueryConfig<S extends z.ZodType, R> {
+  /** Stable name for logs, e.g. `templates.list`. */
+  name: string;
+  schema: S;
+  /** Read-only work (it may call out to Meta or Redis: there is no transaction to hold). Throw `ActionRefusal` to say "no, and why". */
+  handler: (ctx: { input: z.output<S>; owner: OwnerSession }) => Promise<R>;
+}
+
+/**
+ * The read-only sibling of `ownerAction`: a server action that changes nothing in the database, so there is no audit entry and
+ * no transaction, but the same order of events (authenticate, then validate, then run) and the same never-throws contract.
+ */
+export function createOwnerQuery(getHeaders: () => Promise<Headers>) {
+  return function ownerQuery<S extends z.ZodType, R>(config: OwnerQueryConfig<S, R>) {
+    return async (rawInput: unknown): Promise<ActionResult<R>> => {
+      const check = await checkOwner(await getHeaders());
+      if (!check.ok) {
+        logger.warn({ action: config.name, reason: check.reason }, 'owner query rejected');
+        return UNAUTHORIZED;
+      }
+      const parsed = config.schema.safeParse(rawInput);
+      if (!parsed.success) {
+        return {
+          ok: false,
+          error: { code: 'invalid_input', message: 'The submitted data is not valid.', fieldErrors: z.flattenError(parsed.error).fieldErrors as Record<string, string[]> },
+        };
+      }
+      try {
+        return { ok: true, data: await config.handler({ input: parsed.data, owner: check.owner }) };
+      } catch (error) {
+        if (error instanceof ActionRefusal) return { ok: false, error: { code: 'refused', reason: error.reason, message: error.message } };
+        logger.error({ action: config.name, error: error instanceof Error ? error.name : 'unknown' }, 'owner query failed');
+        return { ok: false, error: { code: 'failed', message: 'Something went wrong.' } };
+      }
+    };
+  };
+}

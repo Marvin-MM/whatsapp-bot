@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { Tx } from '@/lib/db';
 import { type MessageError, messages } from '@/lib/db/schema';
 import { transitionMessage, type WebhookStatus as MachineStatus } from '@/lib/state/message-machine';
+import { describeFailureCode } from '@/lib/whatsapp/errors';
 import type { WebhookStatus } from '@/lib/whatsapp/webhook-schema';
 import type { Effect } from './effects';
 
@@ -24,7 +25,7 @@ function failureOf(status: WebhookStatus): MessageError {
   return {
     kind: 'permanent',
     code: first?.code === undefined ? null : String(first.code),
-    message: (first?.title ?? first?.message ?? 'Delivery failed').slice(0, 300),
+    message: describeFailureCode(first?.code, first?.title ?? first?.message).slice(0, 300),
   };
 }
 

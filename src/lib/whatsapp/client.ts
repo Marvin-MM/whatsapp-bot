@@ -7,7 +7,7 @@ import { getEnv } from '@/lib/env';
  * `fetch` is resolved at call time (never captured at import) so tests can stub it at the network layer.
  */
 
-const GRAPH_ORIGIN = 'https://graph.facebook.com';
+export const GRAPH_ORIGIN = 'https://graph.facebook.com';
 const INFO_TIMEOUT_MS = 20_000;
 const DOWNLOAD_TIMEOUT_MS = 60_000;
 

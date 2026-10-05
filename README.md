@@ -5,12 +5,13 @@ the system drafts replies in the owner's own writing style, keeps a rolling summ
 owner owes, and shows everything on a real-time, mobile-first dashboard. Nothing is sent without the owner's explicit action
 (autopilot is a later, opt-in, gated phase).
 
-> **Status: Phase 1 of 8 (ingest).** Messages from your WhatsApp number are received, stored losslessly, processed
-> idempotently (including Coexistence echoes and history), media is downloaded, voice notes are transcribed where that is
-> reliable, and everything appears live in a read-only dashboard. **Nothing can be sent yet.** What is and is not done is in
-> [`docs/phase-reports/phase-1.md`](docs/phase-reports/phase-1.md); the checks only you can do (real Meta, real Groq) are in
-> [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately differs from the original spec is in
-> [`DECISIONS.md`](DECISIONS.md).
+> **Status: Phase 2 of 8 (manual sending).** Everything from Phase 1 (ingest, media, live dashboard), plus: you can **reply from
+> the dashboard** (typed replies and approved templates), the send path is crash-safe (a message is never sent twice, and one
+> whose delivery we cannot confirm is handed to you, never guessed at), the 24-hour window is enforced and counted down live,
+> the **kill switches** work from Settings, and alerts reach you on **Telegram**. There is **no AI drafting yet** (Phase 3-4).
+> What is and is not done is in [`docs/phase-reports/phase-2.md`](docs/phase-reports/phase-2.md); the checks only you can do
+> (real Meta, real Telegram) are in [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately differs from
+> the original spec is in [`DECISIONS.md`](DECISIONS.md).
 
 ## Privacy: who sees customer messages
 
@@ -90,6 +91,34 @@ Things worth knowing:
 - **Webhook failures are repaired automatically.** Anything Meta sends is stored before it is acknowledged; a sweeper
   re-queues anything the worker did not finish, and Meta itself retries for about 36 hours if the app is down.
 
+## Telegram alerts
+
+Alerts (a message that may not have been sent, a reply window about to close, a rejected WhatsApp token, a stuck event) can be sent to
+your Telegram chat. They are **notifications only** and never contain message text.
+
+1. In Telegram, talk to **@BotFather**, send `/newbot`, and copy the bot token into `TELEGRAM_BOT_TOKEN`.
+2. Send any message to your new bot. Then open `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and copy the number
+   at `"chat":{"id": ...}` into `TELEGRAM_CHAT_ID`. (Keep the token secret: anyone with it can post as the bot.)
+3. `TELEGRAM_WEBHOOK_SECRET` is any long random string; it is used from the autopilot phase on, when the bot can also receive taps.
+4. Restart the worker, open **Settings -> Telegram alerts** and press **Send a test message**. Set your quiet hours there: during
+   them only critical alerts are sent (everything still appears in the dashboard).
+
+## Sending
+
+- Type a reply in the box under a conversation (Ctrl/Cmd + Enter sends). It is refused with a reason if sending is paused, the text
+  is empty or too long, or still contains a `[[placeholder]]`.
+- **The 24-hour window.** WhatsApp lets you send a normal message only within 24 hours of the customer's last message. The badge
+  counts down live; after that the box is replaced by the **template picker**: approved templates are loaded from your WhatsApp
+  Business Account (create and approve them in WhatsApp Manager; templates with image headers or button links that need values are
+  listed as "not available from here").
+- **A message we could not confirm** (a timeout, a worker that stopped mid-send) is marked "Not confirmed". Check your phone, then
+  press **It arrived** or **It did not arrive: send again**. The system never resends by itself: the Cloud API has no way to ask
+  "did you get this?", so a guess would be a duplicate message to a customer.
+- **Kill switches** (Settings): pause sending (takes effect on the very next message, even ones already waiting), pause AI. Autopilot
+  cannot be enabled yet.
+- **Worker required.** Sending, retries and the safety-net scans (`alerts-scan` every 5 min, token check daily, 30-day payload purge)
+  all run in the worker. Settings -> "Messages that need attention" lists anything that failed, was not confirmed or is still queued.
+
 ## Scripts
 
 | Command | What it does |
@@ -122,11 +151,11 @@ Things worth knowing:
 |---|---|---|
 | 0 | Scaffold, schema, auth + TOTP, shell, worker runtime, state machines | done |
 | 1 | WhatsApp webhook ingest (incl. Coexistence echoes/history), media, live read-only dashboard | done (real-Meta checks: `docs/ACCEPTANCE.md`) |
-| 2 | Manual send path, templates, kill switches, Telegram notifications | next |
+| 2 | Manual send path, templates, kill switches, Telegram notifications | done (real-Meta checks: `docs/ACCEPTANCE.md`) |
 | 3 | Chat import, style extraction, few-shot retrieval, evaluation harness | |
 | 4 | Drafting + `/approvals` | |
 | 5 | Summaries, tasks, follow-ups | |
 | 6 | Analytics, hardening, production deploy, backups | |
 | 7 | Autopilot (gated by measured quality) | |
 
-Not yet documented here (written in the phase that needs it): Telegram bot setup, production deployment, backup and restore.
+Not yet documented here (written in the phase that needs it): production deployment, backup and restore.

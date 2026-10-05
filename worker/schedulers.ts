@@ -7,13 +7,17 @@ export interface SchedulerDefinition {
 }
 
 /**
- * Recurring jobs on the `scheduled` queue. Phases append here:
- * sweep-webhook-events and alerts-scan every 5 min, token-health and purge-payloads daily,
- * autopilot-digest daily in the owner's evening (pattern + tz).
+ * Recurring jobs on the `scheduled` queue. Phases append here: sweep-webhook-events and alerts-scan every 5 min, token-health
+ * and purge-payloads daily at quiet hours in the owner's time zone, autopilot-digest daily in the owner's evening (Phase 7).
  */
-export const SCHEDULER_DEFINITIONS: readonly SchedulerDefinition[] = [
-  { id: 'sweep-webhook-events', repeat: { every: 5 * 60 * 1000 } },
-];
+export function schedulerDefinitions(timeZone: string): readonly SchedulerDefinition[] {
+  return [
+    { id: 'sweep-webhook-events', repeat: { every: 5 * 60 * 1000 } },
+    { id: 'alerts-scan', repeat: { every: 5 * 60 * 1000 } },
+    { id: 'token-health', repeat: { pattern: '10 6 * * *', tz: timeZone } },
+    { id: 'purge-payloads', repeat: { pattern: '30 3 * * *', tz: timeZone } },
+  ];
+}
 
 /**
  * Makes the queue's job schedulers exactly match `definitions`: upsert is idempotent across restarts,

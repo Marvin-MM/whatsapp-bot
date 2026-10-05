@@ -82,5 +82,15 @@ export function classifyMetaError(code: number | null, httpStatus: number): Meta
   return permanent(`Meta refused the message${code === null ? '' : ` (error ${code})`}. This error is not one we recognise: copy the code if you ask for help.`);
 }
 
+/**
+ * The sentence for an error code Meta reported (a failed delivery in a status webhook): the table's wording when we know the
+ * code, otherwise what Meta said. A known code's retry/permanent class is irrelevant here: the message already failed.
+ */
+export function describeFailureCode(code: number | undefined | null, metaText: string | undefined): string {
+  const known = code === undefined || code === null ? undefined : TABLE[code];
+  if (known) return known.message;
+  return metaText && metaText.length > 0 ? metaText : 'Delivery failed';
+}
+
 /** Every code with a table entry (for the exhaustive test and the docs). */
 export const KNOWN_META_ERROR_CODES: readonly number[] = Object.keys(TABLE).map(Number);
