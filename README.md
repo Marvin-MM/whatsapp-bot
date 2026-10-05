@@ -5,10 +5,12 @@ the system drafts replies in the owner's own writing style, keeps a rolling summ
 owner owes, and shows everything on a real-time, mobile-first dashboard. Nothing is sent without the owner's explicit action
 (autopilot is a later, opt-in, gated phase).
 
-> **Status: Phase 0 of 8.** The foundation is in place: schema, auth with mandatory TOTP, the dashboard shell, the worker
-> runtime, and the pure state machines. Ingesting real WhatsApp messages starts in Phase 1. See
-> [`docs/phase-reports/phase-0.md`](docs/phase-reports/phase-0.md) for what is and is not done, and
-> [`DECISIONS.md`](DECISIONS.md) for every place this build deliberately differs from the original spec.
+> **Status: Phase 1 of 8 (ingest).** Messages from your WhatsApp number are received, stored losslessly, processed
+> idempotently (including Coexistence echoes and history), media is downloaded, voice notes are transcribed where that is
+> reliable, and everything appears live in a read-only dashboard. **Nothing can be sent yet.** What is and is not done is in
+> [`docs/phase-reports/phase-1.md`](docs/phase-reports/phase-1.md); the checks only you can do (real Meta, real Groq) are in
+> [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately differs from the original spec is in
+> [`DECISIONS.md`](DECISIONS.md).
 
 ## Privacy: who sees customer messages
 
@@ -34,7 +36,8 @@ pnpm dev:worker                 # in a second terminal: queue workers + schedule
 ```
 
 Sign in at <http://localhost:3000/login> with `OWNER_EMAIL`, the password you chose, and a code from your authenticator app.
-Until you have a Meta app, Groq key and Telegram bot, any non-empty placeholder in `.env` is enough for Phase 0.
+Until you have a Meta app, Groq key and Telegram bot, any non-empty placeholder in `.env` is enough to run the dashboard; real
+values are needed to receive WhatsApp messages (next section).
 
 Generate secrets with `openssl rand -base64 32`. List current Groq production models (and pick `LLM_MODEL_*`) with:
 
@@ -50,6 +53,42 @@ redis-server --maxmemory-policy noeviction --daemonize yes                  # Bu
 ```
 
 The default URLs in `.env.example` then work unchanged.
+
+## Connecting WhatsApp
+
+Meta's console changes often: follow Meta's own current documentation for the exact clicks; this is what the app needs from it.
+
+1. **A Meta app with the WhatsApp product** and a WhatsApp Business Account, with your number connected through **Coexistence**
+   (the number stays usable in the WhatsApp Business app on your phone). Note the **phone number id** and the **WABA id**
+   (`WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_WABA_ID`).
+2. **A System User access token** (Business Settings -> System users) with `whatsapp_business_messaging` and
+   `whatsapp_business_management`; assign it the WhatsApp account. This is `WHATSAPP_ACCESS_TOKEN`. Use a System User, not a
+   temporary token: the temporary one expires in hours and media downloads would start failing.
+3. **The app secret** (`META_APP_SECRET`: every webhook is verified with it) and a **verify token** you invent
+   (`WEBHOOK_VERIFY_TOKEN`: any long random string).
+4. **A public HTTPS URL for the webhook only.** For local development a tunnel is enough:
+   `cloudflared tunnel --url http://localhost:3000` prints an `https://....trycloudflare.com` address. The dashboard itself
+   stays on `localhost`.
+5. In the app's WhatsApp -> Configuration, set the **callback URL** to `https://<your-host>/api/webhooks/whatsapp` and the
+   **verify token** from step 3, then **subscribe to these fields**: `messages`, `smb_message_echoes`, `history`,
+   `smb_app_state_sync`, `user_id_update`, `account_update`. (Settings shows the exact URL and this list.)
+6. Open **Settings -> WhatsApp connection**: it shows when Meta last reached you, the backlog, the history-import progress and
+   recent alerts. Send yourself a message from another phone and watch it appear in **Chats** within a few seconds.
+
+Things worth knowing:
+
+- **Voice notes.** They are transcribed with Whisper, which has **no Luganda**. A transcript is trusted only when it is plausible
+  English; anything else is shown as "automatic transcript unreliable, please listen" and its text is discarded, never shown to
+  an AI model. English transcripts are always labelled "auto-transcribed". Set `TRANSCRIBE_AUDIO=false` to turn this off.
+- **Media** is stored under `MEDIA_STORAGE_DIR` (default `./data/media`) and served only to the signed-in owner. Include it in
+  backups, and do not place symlinks or other people's files in it. Meta keeps media for about 30 days and download links for
+  minutes, so the worker must be running.
+- **Meta's payload shapes** were reconstructed from SDK type definitions and open-source fixtures because Meta's own pages were
+  unreachable while this was built (see D-031). If you can, paste 5-6 real payloads from Meta's webhook test tool (a text,
+  a voice note, a status, a phone-app reply, a history chunk) into `test/fixtures/webhooks/real/` (see the README there) and run
+  `pnpm test`: they become contract tests.
+- **Webhook failures are repaired automatically.** Anything Meta sends is stored before it is acknowledged; a sweeper
+  re-queues anything the worker did not finish, and Meta itself retries for about 36 hours if the app is down.
 
 ## Scripts
 
@@ -82,13 +121,12 @@ The default URLs in `.env.example` then work unchanged.
 | Phase | Delivers | Status |
 |---|---|---|
 | 0 | Scaffold, schema, auth + TOTP, shell, worker runtime, state machines | done |
-| 1 | WhatsApp webhook ingest (incl. Coexistence echoes/history), media, live read-only dashboard | next |
-| 2 | Manual send path, templates, kill switches, Telegram notifications | |
+| 1 | WhatsApp webhook ingest (incl. Coexistence echoes/history), media, live read-only dashboard | done (real-Meta checks: `docs/ACCEPTANCE.md`) |
+| 2 | Manual send path, templates, kill switches, Telegram notifications | next |
 | 3 | Chat import, style extraction, few-shot retrieval, evaluation harness | |
 | 4 | Drafting + `/approvals` | |
 | 5 | Summaries, tasks, follow-ups | |
 | 6 | Analytics, hardening, production deploy, backups | |
 | 7 | Autopilot (gated by measured quality) | |
 
-Not yet documented here (written in the phase that needs it): Meta app / System User token / webhook registration,
-Telegram bot setup, production deployment, backup and restore.
+Not yet documented here (written in the phase that needs it): Telegram bot setup, production deployment, backup and restore.

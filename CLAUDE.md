@@ -80,6 +80,24 @@ Unit: `test/unit` (no services). Integration: `test/integration` against real Po
 ending `_test` and any Redis db other than 15. Mock external HTTP (Meta, Groq, Telegram) at the fetch layer. A guard test
 that has never failed has proven nothing: mutation-check security tests. Real-model suite is opt-in (`pnpm test:ai`, Phase 4+).
 
+## Hard-won rules (learned the expensive way; each has a test)
+- **The 24h window has ONE definition**: `refreshConversationAggregates` (live customer messages only; never echoes, reactions, imports, history).
+  Never write `window_expires_at` anywhere else. Send-path pre-checks use `isWindowOpen` from `src/lib/conversations/window.ts`.
+- **Raw `db.execute(sql...)` returns timestamps as STRINGS** (Drizzle disables date parsing). Convert with `toDate`; a `Date` inside a
+  `sql` fragment must be an ISO string with `::timestamptz`. Typed builders are fine.
+- **Never guess an identity.** Unresolvable echo/history/identity -> park + `raiseAlert`, never file under a guess. Merge two contacts only
+  when nothing contradicts it. A phone number is only FILLED when blank (late retried webhooks carry older numbers).
+- **Untrusted text never reaches a model unless it is trustworthy**: unreliable transcripts are discarded, customer-deleted messages are
+  blanked, transcripts are labelled machine-made.
+- **Media is untrusted bytes**: MIME allowlist, type must match the message, extension from the verified MIME, atomic write, realpath
+  containment when serving, `nosniff` + CSP sandbox. The Graph download URL must be public https.
+- **Dedupe keys of id-less events include `entry.time`**; BullMQ ignores `add` for an existing job id (remove the failed/completed job first).
+- **Effects happen after commit** (`runEffects`); `processed_at` is stamped last; handlers are idempotent; SSE is best-effort.
+- Postgres cannot store U+0000: strip before storage (`stripNulChars`).
+- **Test infra**: `setupIngestHarness()` for ingest tests (not `use*`: the React-hooks lint rule trips on the prefix). Every guard test is
+  mutation-checked (`scratchpad` script pattern: break the code, watch the right test fail, restore). Verify UI in Chromium against
+  `pnpm build`, not only in tests: Phase 1 found five real defects that way.
+
 ## Layout
 `src/app` routes - `src/actions` server actions - `src/components` UI - `src/server` framework-bound server helpers -
 `src/lib` framework-free domain (db, state, queue, realtime, auth, ai, send, whatsapp, ...) - `worker` BullMQ workers +
