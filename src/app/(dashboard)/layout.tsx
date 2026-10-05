@@ -17,7 +17,7 @@ export const dynamic = 'force-dynamic';
 export default async function DashboardLayout({ children }: { children: ReactNode }) {
   await requireOwnerPage();
   const state = await getShellState();
-  const badges = { '/approvals': state.pendingDrafts };
+  const badges = { '/approvals': state.pendingDrafts, '/tasks': state.overdueTasks };
 
   return (
     <div className="min-h-dvh md:grid md:grid-cols-[14rem_1fr]">

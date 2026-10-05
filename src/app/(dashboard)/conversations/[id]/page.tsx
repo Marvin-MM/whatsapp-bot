@@ -8,6 +8,7 @@ import { ConversationStatusBadge } from '@/components/conversations/status-badge
 import { ThreadScroller } from '@/components/conversations/thread-scroller';
 import { WindowBadge, WindowDetail } from '@/components/conversations/window-badge';
 import { DraftPrompt } from '@/components/approvals/draft-prompt';
+import { ConversationPanel } from '@/components/tasks/conversation-panel';
 import { Composer } from '@/components/send/composer';
 import { groupByDay } from '@/lib/conversations/group';
 import { isUuid, parseThreadParams } from '@/lib/conversations/params';
@@ -15,6 +16,7 @@ import { getThread } from '@/lib/conversations/queries';
 import { getShellState } from '@/lib/dashboard/shell-state';
 import { getDb } from '@/lib/db';
 import { getOpenDraftId } from '@/lib/drafts/queries';
+import { listConversationTasks } from '@/lib/tasks/queries';
 import { loadUnanswered } from '@/lib/drafts/unanswered';
 import { getEnv } from '@/lib/env';
 import { requireOwnerPage } from '@/server/require-owner';
@@ -42,6 +44,7 @@ export default async function ConversationPage({
   const db = getDb();
   const openDraftId = await getOpenDraftId(db, id);
   const canRequestDraft = openDraftId === null && (await loadUnanswered(db, id)).length > 0;
+  const conversationTasks = await listConversationTasks(db, id);
   const last = messages.at(-1);
 
   const rows = groupByDay(messages, now, timeZone);
@@ -75,6 +78,15 @@ export default async function ConversationPage({
         </div>
         <WindowDetail expiresAt={conversation.windowExpiresAt} serverNow={now} className="mt-1 hidden text-xs text-muted-foreground sm:block" />
       </header>
+
+      <ConversationPanel
+        conversationId={conversation.id}
+        summary={conversation.summary}
+        open={conversationTasks.open}
+        recentlyClosed={conversationTasks.recentlyClosed}
+        now={now}
+        timeZone={timeZone}
+      />
 
       <div className="flex-1">
         {thread.olderCursor ? (

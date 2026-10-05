@@ -19,3 +19,27 @@ export const draftOutputSchema = z.object({
 export type DraftOutput = z.infer<typeof draftOutputSchema>;
 export type DraftIntent = (typeof DRAFT_INTENTS)[number];
 export type RiskFlag = (typeof RISK_FLAGS)[number];
+
+/**
+ * What the post-send analysis returns (spec 9.5): the rolling summary and the changes to the conversation's tasks. Code, not the model,
+ * decides which operations are acceptable (`lib/analysis/operations.ts`): ids outside the conversation, tasks that are not open and due
+ * dates long in the past are rejected.
+ */
+export const TASK_TYPES = ['request', 'followup', 'reminder'] as const;
+
+export const analysisOutputSchema = z.object({
+  /** At most three sentences about the WHOLE conversation so far. */
+  summary: z.string().max(500),
+  operations: z
+    .array(
+      z.discriminatedUnion('op', [
+        z.object({ op: z.literal('create'), description: z.string().min(1).max(200), type: z.enum(TASK_TYPES), dueAt: z.iso.datetime({ offset: true }).nullable() }),
+        z.object({ op: z.literal('complete'), taskId: z.uuid() }),
+        z.object({ op: z.literal('update'), taskId: z.uuid(), description: z.string().min(1).max(200).optional(), dueAt: z.iso.datetime({ offset: true }).nullable().optional() }),
+      ]),
+    )
+    .max(10),
+});
+
+export type AnalysisOutput = z.infer<typeof analysisOutputSchema>;
+export type AnalysisOperation = AnalysisOutput['operations'][number];

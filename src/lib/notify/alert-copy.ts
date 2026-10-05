@@ -18,7 +18,25 @@ const COPY: Readonly<Record<string, { title: string; advice: string }>> = {
   phone_quality_degraded: { title: 'Your number’s quality rating dropped', advice: 'Slow down on marketing messages.' },
   window_expiring: { title: 'A reply window closes soon', advice: 'Reply within the hour, or only a template can be sent afterwards.' },
   token_check_failed: { title: 'Could not verify the WhatsApp token', advice: 'See Settings for the details.' },
+  task_overdue: { title: 'A task is overdue', advice: 'Open Tasks to finish it or move the time.' },
+  analysis_failed: { title: 'A conversation summary could not be updated', advice: 'Replies and your own tasks still work. It is tried again after your next reply.' },
+  ai_key_invalid: { title: 'The AI key was rejected', advice: 'Drafts and summaries are paused until GROQ_API_KEY is fixed.' },
+  draft_generation_failed: { title: 'A draft could not be written', advice: 'Open Approvals and press Try again, or reply yourself.' },
 };
+
+/** Where the link in an alert should land: the page that has the thing to do. */
+export function alertPath(kind: string): string {
+  switch (kind) {
+    case 'task_overdue':
+      return '/tasks';
+    case 'draft_generation_failed':
+      return '/approvals';
+    case 'window_expiring':
+      return '/conversations?filter=needs_reply';
+    default:
+      return '/settings';
+  }
+}
 
 const PREFIX: Record<AlertSeverity, string> = { critical: '🔴', warning: '🟠', info: 'ℹ️' };
 

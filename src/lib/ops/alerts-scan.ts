@@ -21,6 +21,8 @@ import { transitionMessage } from '@/lib/state/message-machine';
  *     are not stored): it fails visibly.
  *  3. A customer waiting on a reply whose 24h window closes within two hours.
  *  4. A customer message nobody drafted for (the draft job was lost: Redis flushed, the enqueue failed after the commit): drafted once more.
+ *  5. An open task whose time has passed: the owner is told once (again if they move the time and it passes again).
+ *  6. An owner reply the summary never covered (the analysis job was lost): analysed once more.
  */
 
 /** A customer message older than this with no draft covering it is treated as a lost draft job. */
@@ -31,8 +33,15 @@ export const STAMP_STALE_MS = 3 * 60 * 1000;
 /** Queued and never stamped for this long: the worker should have picked it up long ago. */
 export const UNSTAMPED_STALE_MS = 5 * 60 * 1000;
 
+/** An accepted owner reply older than this that the summary does not cover is treated as a lost analysis job ... */
+export const ANALYSIS_STALE_MS = 10 * 60 * 1000;
+/** ... but only for a day: a lost job is a recent accident, and replaying months of old conversations through the model would invent stale tasks. The next reply's analysis covers anything older. */
+export const ANALYSIS_REQUEUE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
 export interface ScanResult {
   draftsRequeued: number;
+  analysesRequeued: number;
+  tasksOverdue: number;
   parkedUnknown: number;
   requeued: number;
   templatesFailed: number;
@@ -163,14 +172,82 @@ async function requeueMissingDrafts(db: Db, queue: Queue, now: Date): Promise<nu
   return requeued;
 }
 
-export async function scanSends(options: { now?: Date; db?: Db; queue?: Queue; draftQueue?: Queue } = {}): Promise<ScanResult> {
+/**
+ * Open tasks past their time, alerted once each. The alert key carries the due time: moving a task's time (which also clears the stamp)
+ * gives it a new key, so it is reported again if it is late again. Alert first, stamp second: a crash in between repeats the (deduplicated)
+ * alert, never loses it.
+ */
+async function alertOverdueTasks(db: Db, now: Date): Promise<number> {
+  const rows = await db.execute<{ id: string; due: string }>(sql`
+    SELECT id, to_char(due_at AT TIME ZONE 'UTC', 'YYYYMMDD"T"HH24MISS') AS due
+    FROM tasks
+    WHERE status = 'open' AND due_at IS NOT NULL AND due_at < ${now.toISOString()}::timestamptz AND alerted_overdue_at IS NULL
+    ORDER BY due_at LIMIT 50
+  `);
+  for (const row of rows) {
+    await runEffects([{ type: 'alert', alert: { kind: 'task_overdue', severity: 'warning', entityId: row.id, dedupeKey: `task_overdue:${row.id}:${row.due}` } }]);
+    await db.execute(sql`UPDATE tasks SET alerted_overdue_at = ${now.toISOString()}::timestamptz WHERE id = ${row.id}::uuid AND status = 'open' AND alerted_overdue_at IS NULL`);
+  }
+  return rows.length;
+}
+
+/**
+ * The newest accepted owner reply of each conversation that the summary does not yet cover, once the analysis job should long have run.
+ * Once per message (a notifications key): an analysis that keeps failing is the failed-job panel's business, not an endless loop.
+ */
+async function requeueMissingAnalyses(db: Db, queue: Queue, now: Date): Promise<number> {
+  const rows = await db.execute<{ message_id: string }>(sql`
+    SELECT DISTINCT ON (m.conversation_id) m.id AS message_id
+    FROM messages m
+    JOIN conversations c ON c.id = m.conversation_id
+    WHERE m.direction = 'outbound' AND m.status IN ('sent', 'delivered', 'read') AND m.provenance <> 'imported' AND m.type <> 'reaction'
+      AND m.created_at < ${new Date(now.getTime() - ANALYSIS_STALE_MS).toISOString()}::timestamptz
+      AND m.created_at > ${new Date(now.getTime() - ANALYSIS_REQUEUE_MAX_AGE_MS).toISOString()}::timestamptz
+      AND NOT EXISTS (SELECT 1 FROM settings WHERE ai_paused)
+      AND (
+        c.summary_through_message_id IS NULL
+        OR (m.occurred_at, m.id) > (
+          coalesce((SELECT t.occurred_at FROM messages t WHERE t.id = c.summary_through_message_id), '-infinity'::timestamptz),
+          coalesce((SELECT t.id FROM messages t WHERE t.id = c.summary_through_message_id), '00000000-0000-0000-0000-000000000000'::uuid)
+        )
+      )
+    ORDER BY m.conversation_id, m.occurred_at DESC, m.id DESC
+    LIMIT 20
+  `);
+  let requeued = 0;
+  for (const row of rows) {
+    const jobId = toJobId(`analysis:${row.message_id}`);
+    const existing = await queue.getJob(jobId);
+    if (existing) {
+      const state = await existing.getState();
+      // Waiting, running or backing off: not lost.
+      if (state !== 'failed' && state !== 'completed' && state !== 'unknown') continue;
+    }
+    const claimed = await db.execute<{ id: string }>(sql`
+      INSERT INTO notifications (id, kind, dedupe_key) VALUES (gen_random_uuid(), 'analysis_requeue', ${`analysis_requeue:${row.message_id}`})
+      ON CONFLICT (dedupe_key) DO NOTHING RETURNING id
+    `);
+    if (claimed.length === 0) continue;
+    // BullMQ ignores an add for an id it still holds: a finished or failed job has to go first.
+    if (existing) await existing.remove().catch(() => undefined);
+    await enqueueOn(queue, 'analyze', { messageId: row.message_id }, { jobId: `analysis:${row.message_id}` });
+    requeued += 1;
+  }
+  return requeued;
+}
+
+export async function scanSends(options: { now?: Date; db?: Db; queue?: Queue; draftQueue?: Queue; analysisQueue?: Queue } = {}): Promise<ScanResult> {
   const now = options.now ?? new Date();
   const db = options.db ?? getDb();
   const queue = options.queue ?? getQueue('outbound-send');
   const draftsRequeued = await requeueMissingDrafts(db, options.draftQueue ?? getQueue('generate-draft'), now);
+  const analysesRequeued = await requeueMissingAnalyses(db, options.analysisQueue ?? getQueue('post-send-analysis'), now);
   const parkedUnknown = await parkStampedAsUnknown(db, now);
   const { requeued, templatesFailed } = await requeueUnstamped(db, queue, now);
   const windowsExpiring = await alertExpiringWindows(db, now);
-  if (parkedUnknown + requeued + templatesFailed + draftsRequeued > 0) logger.warn({ parkedUnknown, requeued, templatesFailed, draftsRequeued }, 'alerts-scan repaired messages');
-  return { draftsRequeued, parkedUnknown, requeued, templatesFailed, windowsExpiring };
+  const tasksOverdue = await alertOverdueTasks(db, now);
+  if (parkedUnknown + requeued + templatesFailed + draftsRequeued + analysesRequeued > 0) {
+    logger.warn({ parkedUnknown, requeued, templatesFailed, draftsRequeued, analysesRequeued }, 'alerts-scan repaired messages');
+  }
+  return { draftsRequeued, analysesRequeued, tasksOverdue, parkedUnknown, requeued, templatesFailed, windowsExpiring };
 }

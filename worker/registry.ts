@@ -3,6 +3,7 @@ import type { QueueName } from '@/lib/queue/names';
 import { downloadMediaProcessor } from './processors/download-media';
 import { generateDraftProcessor } from './processors/generate-draft';
 import { outboundSendProcessor } from './processors/outbound-send';
+import { postSendAnalysisProcessor } from './processors/post-send-analysis';
 import { processWebhookEventProcessor } from './processors/process-webhook-event';
 import { scheduledProcessor } from './processors/scheduled';
 import { styleExtractProcessor } from './processors/style-extract';
@@ -23,6 +24,7 @@ export const WORKER_REGISTRATIONS: readonly WorkerRegistration[] = [
   { queue: 'download-media', processor: downloadMediaProcessor },
   { queue: 'generate-draft', processor: generateDraftProcessor },
   { queue: 'outbound-send', processor: outboundSendProcessor },
+  { queue: 'post-send-analysis', processor: postSendAnalysisProcessor },
   { queue: 'style-extract', processor: styleExtractProcessor },
   { queue: 'scheduled', processor: scheduledProcessor },
 ];

@@ -6,7 +6,7 @@ import { getDb } from '@/lib/db';
 import { settings } from '@/lib/db/schema';
 import { getEnv } from '@/lib/env';
 import { logger } from '@/lib/logger';
-import { alertText } from './alert-copy';
+import { alertPath, alertText } from './alert-copy';
 import { isQuietNow, quietHoursSchema } from './quiet-hours';
 
 /**
@@ -84,7 +84,7 @@ export async function telegramAlertSink(alert: AlertInput, now: Date = new Date(
     // The setting is JSON in the database: anything unreadable means "no quiet hours" (deliver), never "swallow".
     const quiet = quietHoursSchema.safeParse(row?.quiet);
     if (alert.severity !== 'critical' && quiet.success && isQuietNow(now, quiet.data, getEnv().OWNER_TIMEZONE)) return;
-    const result = await sendTelegramMessage(alertText(alert, `${getEnv().APP_URL}/settings`));
+    const result = await sendTelegramMessage(alertText(alert, `${getEnv().APP_URL}${alertPath(alert.kind)}`));
     if (!result.ok) logger.warn({ alert: alert.kind, reason: result.reason }, 'telegram alert not delivered');
   } catch (error) {
     logger.warn({ alert: alert.kind, error: error instanceof Error ? error.name : 'unknown' }, 'telegram alert sink failed');

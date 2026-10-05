@@ -36,3 +36,6 @@ export function badgeFor(badges: NavBadges | undefined, href: string): number {
 
 /** "99+" keeps the badge a fixed width however long the queue is. */
 export const formatBadge = (count: number): string => (count > 99 ? '99+' : String(count));
+
+/** What a count on a tab means, for a screen reader ("4 waiting", "2 overdue"). */
+export const BADGE_NOUN: Readonly<Record<string, string>> = { '/approvals': 'waiting', '/tasks': 'overdue' };

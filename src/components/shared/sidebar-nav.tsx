@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { NavIconView } from './nav-icon';
-import { NAV_ITEMS, type NavBadges, badgeFor, formatBadge, isActivePath } from './nav-items';
+import { BADGE_NOUN, NAV_ITEMS, type NavBadges, badgeFor, formatBadge, isActivePath } from './nav-items';
 
 /** Desktop navigation: every destination, always visible. */
 export function SidebarNav({ badges }: { badges?: NavBadges }) {
@@ -29,7 +29,7 @@ export function SidebarNav({ badges }: { badges?: NavBadges }) {
             {badge > 0 ? (
               <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-xs font-semibold text-primary-foreground">
                 {formatBadge(badge)}
-                <span className="sr-only"> waiting</span>
+                <span className="sr-only"> {BADGE_NOUN[item.href] ?? 'waiting'}</span>
               </span>
             ) : null}
           </Link>

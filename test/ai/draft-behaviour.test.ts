@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, it } from 'vitest';
 import { chatModelId } from '@/lib/ai/models';
 import { reasoningFor } from '@/lib/ai/draft';
 import { type DraftContext, DRAFT_PROMPT_VERSION, draftInstructions, draftUserPrompt } from '@/lib/ai/prompts/draft';
@@ -7,18 +7,14 @@ import { type DraftOutput, draftOutputSchema } from '@/lib/ai/schemas';
 import { getDb } from '@/lib/db';
 import { inventedFacts } from '@/lib/metrics/invented-facts';
 import { closeAllDb, migratorSql, resetDb } from '../helpers/db';
+import { RUN, SAMPLES, holds } from './helpers';
 
 /**
  * Behaviour of the REAL drafting model against the rules in the prompt (spec 9.2, 13 Phase 4). Opt-in: `pnpm test:ai`.
  *
- * A model is not deterministic, so each scenario is asked SAMPLES times and must hold in at least REQUIRED of them; the counts are printed so
- * a pass at 3/3 and a pass at 2/3 are not the same news. These check what the MODEL does on its own: the pipeline's own safety nets
+ * See `helpers.ts` for the sampling rule (3 samples, 2 required, counts printed). These check what the MODEL does on its own: the pipeline's own safety nets
  * (the injection detector, placeholders blocking the send, the owner's approval) are tested without a model in the normal suites.
  */
-const RUN = process.env.AI_TESTS === '1';
-const SAMPLES = 3;
-const REQUIRED = 2;
-
 const NOW = new Date('2026-10-05T11:30:00Z'); // 14:30 Monday in Kampala
 const base: DraftContext = {
   ownerName: 'Marvin',
@@ -53,12 +49,6 @@ async function sample(context: DraftContext, times = SAMPLES): Promise<DraftOutp
     outputs.push(result.output);
   }
   return outputs;
-}
-
-function holds(name: string, outputs: DraftOutput[], check: (output: DraftOutput) => boolean): void {
-  const passed = outputs.filter(check).length;
-  process.stdout.write(`  ${name}: ${passed}/${outputs.length}\n`);
-  expect(passed, `${name} held in ${passed}/${outputs.length} samples; ${REQUIRED} are required. Replies: ${JSON.stringify(outputs.map((o) => o.reply))}`).toBeGreaterThanOrEqual(REQUIRED);
 }
 
 describe.skipIf(!RUN)('the real drafting model', () => {

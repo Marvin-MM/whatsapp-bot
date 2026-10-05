@@ -113,6 +113,12 @@ that has never failed has proven nothing: mutation-check security tests. Real-mo
   both an attack and an ordinary-chat case to `test/unit/prompt-injection.test.ts` when touching it). The Approvals badge, the Overview card and the
   queue count the same set (`countOpenDrafts`). A `noReplyNeeded` draft still has a non-empty acknowledgement (the schema demands it). Opt-in real
   model suite: `pnpm test:ai` (reads only `GROQ_API_KEY` and `LLM_MODEL_DRAFT` from `.env`: the suite truncates the `_test` database).
+- **Summaries and tasks (Phase 5)**: `analyzeAfterMessage` (job per ACCEPTED outbound message: dashboard send once Meta has it, or a phone echo). The
+  model call holds no transaction; the plan is applied under the conversation lock against the tasks as they are THEN. The model PROPOSES, code
+  decides (`planOperations`: ids must be open tasks of this conversation, due dates not more than a day past, no duplicates, no no-op updates). Task
+  text never goes in an audit entry or an alert (it comes from customer messages). Owner task changes are conditional updates; owner-typed times are
+  `OWNER_TIMEZONE` wall clock (`parseLocalDateTime`). An overdue alert's key carries the due time. The `alerts-scan` analysis requeue is bounded to
+  24 hours on purpose (D-077): never let a safety net replay history through a model.
 - **Notifications**: alerts go through `raiseAlert` (deduped); the Telegram sink is registered in the worker only; `info` alerts are
   dashboard-only; quiet hours silence everything but critical; no message bodies in any notification or audit entry.
 - **Test infra**: `setupIngestHarness()` for ingest tests (not `use*`: the React-hooks lint rule trips on the prefix). Every guard test is

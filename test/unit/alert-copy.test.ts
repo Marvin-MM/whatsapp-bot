@@ -19,3 +19,26 @@ describe('alertText', () => {
     }
   });
 });
+
+describe('alerts that point somewhere useful', () => {
+  it('sends the owner to the page that has the thing to do', async () => {
+    const { alertPath, alertText } = await import('@/lib/notify/alert-copy');
+    expect(alertPath('task_overdue')).toBe('/tasks');
+    expect(alertPath('draft_generation_failed')).toBe('/approvals');
+    expect(alertPath('window_expiring')).toBe('/conversations?filter=needs_reply');
+    expect(alertPath('whatsapp_token_invalid')).toBe('/settings');
+    expect(alertPath('something_new')).toBe('/settings');
+    const text = alertText({ kind: 'task_overdue', severity: 'warning' }, 'https://x.example/tasks');
+    expect(text).toContain('A task is overdue');
+    expect(text).toContain('https://x.example/tasks');
+    // an alert carries a kind and an id only: never the task's words, a name or a number
+    expect(text).not.toMatch(/\d{6,}/);
+  });
+
+  it('has plain words for the Phase 4 and 5 alerts', async () => {
+    const { alertText } = await import('@/lib/notify/alert-copy');
+    for (const kind of ['analysis_failed', 'ai_key_invalid', 'draft_generation_failed']) {
+      expect(alertText({ kind, severity: 'warning' }, 'https://x.example'), kind).not.toMatch(/^.?\s?Alert:/);
+    }
+  });
+});

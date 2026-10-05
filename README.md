@@ -5,12 +5,12 @@ the system drafts replies in the owner's own writing style, keeps a rolling summ
 owner owes, and shows everything on a real-time, mobile-first dashboard. Nothing is sent without the owner's explicit action
 (autopilot is a later, opt-in, gated phase).
 
-> **Status: Phase 4 of 8 (drafting and approvals).** On top of Phase 3 (import, style, evaluation): when a customer writes, the system now **drafts a
-> reply in your style** and shows it on **Approvals** for you to approve, edit, reject or regenerate. **Nothing is ever sent without your explicit
-> approval**, and a draft with a `[[placeholder]]` (a fact it did not have) cannot be sent until you fill it in. Summaries and tasks are Phase 5, the
-> optional autopilot Phase 7. What is and is not done is in [`docs/phase-reports/phase-4.md`](docs/phase-reports/phase-4.md); the checks only you can do
-> (real chats, the real model, a real phone) are in [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately differs from the
-> original spec is in [`DECISIONS.md`](DECISIONS.md).
+> **Status: Phase 5 of 8 (summaries, tasks, follow-ups).** On top of Phase 4 (drafts you approve): after you reply, the system keeps a **short summary** of
+> each conversation and **notes what you promised or were asked to do** as tasks, which you manage on **Tasks**; the **Overview** shows what is slipping
+> (overdue tasks, windows closing, drafts waiting, failed messages) and how fast you are answering. **Nothing is ever sent without your explicit
+> approval.** The optional autopilot is Phase 7. What is and is not done is in [`docs/phase-reports/phase-5.md`](docs/phase-reports/phase-5.md); the checks
+> only you can do (real chats, the real model, a real phone) are in [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately
+> differs from the original spec is in [`DECISIONS.md`](DECISIONS.md).
 
 ## Privacy: who sees customer messages
 
@@ -153,10 +153,26 @@ conversation per 10 minutes, a digest when more than 5 are waiting, silent durin
 - **If drafting fails** (the model is down, the key is wrong) the card says so and offers **Try again**; replying by hand always works, and a failed
   draft raises an alert. Turn **AI** off in Settings to stop drafting without stopping anything else.
 
+## Summaries, tasks and follow-ups
+
+- **After you reply** (from the dashboard or from your phone) the assistant reads what is new since its last summary and updates two things: a
+  three-sentence **summary** of the conversation (shown above the thread) and your **tasks**: things a customer asked you to do, things you promised
+  ("I'll call you tomorrow at 3"), and time-bound reminders. It does not create a task for something already done in the same messages, and it never
+  invents a time: no time stated means no time set.
+- **Tasks** lists them: late ones first and in red (with the lateness in words), then upcoming, then those with no time; Done and Cancelled below.
+  Filter by kind and by when. Each task links to the message it came from. You can **add**, **edit**, **finish**, **cancel** and **reopen** them; times
+  are your own clock (`OWNER_TIMEZONE`). A task the assistant noted wrongly is one click to cancel: nothing is sent to anyone because of a task.
+- **Overdue tasks** raise one alert each (Telegram, if set up; and a badge on the Tasks tab). Move the time and it can alert again when late again.
+- **Overview** shows drafts to approve, customers waiting, open and late tasks, your median first-reply time over 7 days, and **Needs attention**: failed
+  or unconfirmed replies, overdue tasks, reply windows closing within two hours and drafts waiting more than 30 minutes.
+- The summary and tasks cost one small model call per reply. **Turn AI off** in Settings and they stop too (they catch up on the next reply after you turn
+  it back on).
+
 ## Testing against the real model
 
 `pnpm test:ai` asks the real draft model a handful of adversarial and fact-checking questions (an injection, a request for its instructions, "are you a
-bot?", a price it was not given) three times each and prints how many times each rule held. It needs `GROQ_API_KEY` and `LLM_MODEL_DRAFT` (in the
+bot?", a price it was not given) and the real analysis model a few note-taking ones ("call me tomorrow at 3pm" must become 15:00 tomorrow in your
+zone), three times each, and prints how many times each rule held. It needs `GROQ_API_KEY`, `LLM_MODEL_DRAFT` and `LLM_MODEL_ANALYSIS` (in the
 environment or in `.env`), costs a few cents, sends invented text only, and is never run by CI. A pass at 3/3 and a pass at 2/3 are different news:
 read the numbers. It uses the throwaway `_test` database.
 
@@ -174,7 +190,7 @@ read the numbers. It uses the throwaway `_test` database.
 | `pnpm typecheck` / `pnpm lint` | `tsc --noEmit` / ESLint |
 | `pnpm test` | Unit tests (no services needed) |
 | `pnpm test:integration` | Integration tests against real Postgres + Redis (database must end in `_test`, Redis db 15) |
-| `pnpm test:ai` | Opt-in: behaviour of the REAL draft model (needs `GROQ_API_KEY`, `LLM_MODEL_DRAFT`; a few cents) |
+| `pnpm test:ai` | Opt-in: behaviour of the REAL draft and analysis models (needs `GROQ_API_KEY`, `LLM_MODEL_DRAFT`, `LLM_MODEL_ANALYSIS`; a few cents) |
 
 ## How it fits together
 
@@ -198,7 +214,7 @@ read the numbers. It uses the throwaway `_test` database.
 | 2 | Manual send path, templates, kill switches, Telegram notifications | done (real-Meta checks: `docs/ACCEPTANCE.md`) |
 | 3 | Chat import, style extraction, few-shot retrieval, evaluation harness | done (real-model checks: `docs/ACCEPTANCE.md`) |
 | 4 | Drafting + `/approvals` | done (real-model and real-phone checks: `docs/ACCEPTANCE.md`) |
-| 5 | Summaries, tasks, follow-ups | |
+| 5 | Summaries, tasks, follow-ups | done (real-model checks: `docs/ACCEPTANCE.md`) |
 | 6 | Analytics, hardening, production deploy, backups | |
 | 7 | Autopilot (gated by measured quality) | |
 

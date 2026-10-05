@@ -23,14 +23,21 @@ const h = setupIngestHarness();
 const sql = () => h.admin();
 
 let sendQueue: Queue;
+let analysisQueue: Queue;
 beforeAll(async () => {
   sendQueue = new Queue('outbound-send', { connection: createTestRedis(), prefix: getEnv().BULLMQ_PREFIX });
+  analysisQueue = new Queue('post-send-analysis', { connection: createTestRedis(), prefix: getEnv().BULLMQ_PREFIX });
 });
 afterAll(async () => {
-  await sendQueue.obliterate({ force: true });
-  await sendQueue.close();
+  for (const queue of [sendQueue, analysisQueue]) {
+    await queue.obliterate({ force: true });
+    await queue.close();
+  }
 });
-beforeEach(() => sendQueue.obliterate({ force: true }));
+beforeEach(async () => {
+  await sendQueue.obliterate({ force: true });
+  await analysisQueue.obliterate({ force: true });
+});
 afterEach(() => vi.unstubAllGlobals());
 
 // ------------------------------------------------------------------------------------------------------------ helpers
@@ -328,6 +335,17 @@ describe('performSend: one call to Meta, recorded exactly', () => {
 
     const statuses = (await h.events()).filter((e) => e.type === 'message:status');
     expect(statuses.map((e) => (e.type === 'message:status' ? e.payload.status : null))).toEqual(['sent']);
+
+    // Once Meta has it: one summary-and-tasks job, named after the message (a second send run must not make another).
+    expect((await analysisQueue.getJobs(['waiting', 'delayed', 'prioritized'])).map((job) => job.data)).toEqual([{ messageId }]);
+  });
+
+  it('a message that is NOT accepted (Meta refuses it) starts no analysis', async () => {
+    stubNetwork({ graphSend: () => metaError(131026) });
+    const { conversationId } = await seedCustomer();
+    const { messageId } = await queueAndAnnounce(textInput(conversationId));
+    expect(await send(messageId)).toBe('failed');
+    expect(await analysisQueue.getJobs(['waiting', 'delayed', 'prioritized'])).toHaveLength(0);
   });
 
   it('a second run of the same job sends NOTHING (at most once, ever)', async () => {

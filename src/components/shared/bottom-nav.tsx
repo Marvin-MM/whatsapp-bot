@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { NavIconView } from './nav-icon';
-import { NAV_ITEMS, type NavBadges, badgeFor, formatBadge, isActivePath } from './nav-items';
+import { BADGE_NOUN, NAV_ITEMS, type NavBadges, badgeFor, formatBadge, isActivePath } from './nav-items';
 
 const PRIMARY = NAV_ITEMS.filter((item) => item.primary);
 const SECONDARY = NAV_ITEMS.filter((item) => !item.primary);
@@ -39,7 +39,7 @@ export function BottomNav({ badges }: { badges?: NavBadges }) {
                   {badge > 0 ? (
                     <span className="absolute -right-3 -top-1.5 min-w-4 rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-4 text-primary-foreground">
                       {formatBadge(badge)}
-                      <span className="sr-only"> waiting</span>
+                      <span className="sr-only"> {BADGE_NOUN[item.href] ?? 'waiting'}</span>
                     </span>
                   ) : null}
                 </span>

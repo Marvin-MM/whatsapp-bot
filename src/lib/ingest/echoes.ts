@@ -2,6 +2,7 @@ import 'server-only';
 import { eq } from 'drizzle-orm';
 import type { Tx } from '@/lib/db';
 import { conversations, messages } from '@/lib/db/schema';
+import { analysisEffect } from '@/lib/analysis/trigger';
 import { supersedeOpenDrafts } from '@/lib/drafts/supersede';
 import type { EchoItem } from '@/lib/whatsapp/webhook-schema';
 import { type HandlerResult, RetryLaterError, type IngestContext, nothing } from './context';
@@ -76,6 +77,8 @@ export async function ingestEcho(tx: Tx, item: EchoItem, ctx: IngestContext): Pr
       .where(eq(messages.wamid, message.id))
       .limit(1);
     if (existing?.mediaId && !existing.mediaPath) effects.push(mediaJob(existing.id));
+    // A replay re-derives the follow-up work (the job id is the message, so a second enqueue is harmless).
+    if (existing && message.type !== 'reaction') effects.push(analysisEffect(existing.id));
     return { effects };
   }
 
@@ -90,5 +93,6 @@ export async function ingestEcho(tx: Tx, item: EchoItem, ctx: IngestContext): Pr
     effects.push({ type: 'publish', event: { type: 'draft:updated', payload: { conversationId, draftId, status: 'superseded' } } });
   }
   effects.push({ type: 'publish', event: { type: 'conversation:updated', payload: { conversationId } } });
+  effects.push(analysisEffect(insertedId));
   return { effects };
 }

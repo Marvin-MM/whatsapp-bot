@@ -8,6 +8,7 @@ import { supersedeOpenDrafts } from '@/lib/drafts/supersede';
 import { type Effect, runEffects } from '@/lib/ingest/effects';
 import { enqueue } from '@/lib/queue/enqueue';
 import { transitionMessage } from '@/lib/state/message-machine';
+import { analysisEffect } from '@/lib/analysis/trigger';
 import { draftStatusesAllowing } from '@/lib/state/draft-machine';
 import { type SendOutcome, type TemplateToSend, buildTemplatePayload, buildTextPayload, postMessage } from '@/lib/whatsapp/send-api';
 import { type PrecheckCode, precheck } from './precheck';
@@ -369,7 +370,7 @@ async function recordOutcome(tx: Tx, messageId: string, outcome: SendOutcome, ct
                consecutive_auto_replies = CASE WHEN ${current.provenance} = 'ai_autopilot' THEN consecutive_auto_replies + 1 ELSE 0 END
         WHERE id = ${conversationId}::uuid AND (last_inbound_at IS NULL OR last_inbound_at <= ${current.occurredAt.toISOString()}::timestamptz)
       `);
-      return { outcome: 'sent', effects: [statusEvent(conversationId, messageId, next), conversationEvent(conversationId)] };
+      return { outcome: 'sent', effects: [statusEvent(conversationId, messageId, next), conversationEvent(conversationId), analysisEffect(messageId)] };
     }
     case 'retry': {
       if (ctx.finalAttempt) {

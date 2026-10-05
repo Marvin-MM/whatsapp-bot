@@ -1,6 +1,7 @@
 import 'server-only';
 import { count, inArray } from 'drizzle-orm';
 import { countOpenDrafts } from '@/lib/drafts/queries';
+import { countTasks } from '@/lib/tasks/queries';
 import { getDb } from '@/lib/db';
 import { messages, settings } from '@/lib/db/schema';
 
@@ -12,6 +13,8 @@ export interface ShellState {
   problemCount: number;
   /** Drafts waiting for the owner's decision (shown on the Approvals tab). */
   pendingDrafts: number;
+  /** Open tasks past their time (shown on the Tasks tab). */
+  overdueTasks: number;
 }
 
 /** What the global header shows: kill-switch state and the alert counter. */
@@ -26,6 +29,7 @@ export async function getShellState(): Promise<ShellState> {
     .from(messages)
     .where(inArray(messages.status, ['queued', 'unknown', 'failed']));
   const pendingDrafts = await countOpenDrafts(db);
+  const { overdue: overdueTasks } = await countTasks(db, new Date());
 
   return {
     aiPaused: row?.aiPaused ?? false,
@@ -34,5 +38,6 @@ export async function getShellState(): Promise<ShellState> {
     autopilotPaused: row?.autopilotPaused ?? true,
     problemCount: problems?.n ?? 0,
     pendingDrafts,
+    overdueTasks,
   };
 }

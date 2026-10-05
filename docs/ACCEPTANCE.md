@@ -192,3 +192,43 @@ These need your real Meta number, your Groq key, your style guide (Phase 3) and 
 
 Tell me which steps passed and which surprised you. Phase 5 (summaries and tasks) does not depend on these, so the build continues without waiting; whatever these find goes to the front of the queue.
 
+---
+
+## Phase 5: summaries and tasks
+
+These need your real Meta number and your Groq key (and the `LLM_MODEL_ANALYSIS` model). Everything was proven in the sandbox with a fake model that resolves dates the way a good one should.
+
+### 25. A promise becomes a task
+
+**Do** Have a friend message your business number: "Hi, can you call me tomorrow at 3pm?". Reply from the dashboard: "Sure, I will call you then". Wait about 10 seconds, then open **Tasks**.
+**Expect** ONE task "Call ..." (kind **I promised**), due **tomorrow 15:00 in your own time**, with "From: “Sure, I will call you then”" linking to your reply, and "noted by the assistant". On the conversation, a closed bar above the thread shows the first words of a summary and "1 open"; open it for the full summary and the task.
+**Then** reply from your PHONE to another customer in the same way and check the same happens (a reply typed in the WhatsApp Business app counts).
+**If not** no task after a minute: is the worker running, is **AI** on, and is `LLM_MODEL_ANALYSIS` a valid model? A failed analysis raises an alert after three tries; replying and your own tasks keep working. A wrong date is the finding that matters most: tell me what the customer wrote, what time it was, and what the task says.
+
+### 26. It does not make things up
+
+**Do** Chat normally for a while: thanks, small talk, a question you answer fully, a request you fulfil ("send me the photos" then you send them).
+**Expect** no task for small talk; a request task appears when asked and is **completed by itself** (it moves to Done) once you have done it; the same promise repeated in a later message does not create a second task; the summary stays at three sentences and states nothing you did not say.
+**Tell me** every task that should not exist and every task that should and does not, with the messages. Then run `pnpm test:ai` and send me the lines under "the real analysis model": they measure exactly this on fixed examples.
+
+### 27. Manage tasks
+
+**Do** On **Tasks**: add a task for a customer with a time an hour ago, then move it to tomorrow; mark one done and reopen it; cancel one; use the filters; open a task's "From:" link.
+**Expect** the late task red with "Overdue by 1 h" and a number on the Tasks tab; moving the time removes both; Done/Reopen/Cancel move it between the lists; the link opens the conversation at the message.
+**If not** tell me which control did nothing, or any message that appears in English that you would not understand on your phone.
+
+### 28. The overdue alert
+
+**Do** Let a task with a time pass (or add one due in 2 minutes), with Telegram set up and not in quiet hours.
+**Expect** within about 5 minutes ONE Telegram message "A task is overdue" with a link to Tasks, and no task wording in it; never a second one for the same time.
+
+### 29. The Overview
+
+**Do** Open the Overview with a couple of tasks, a draft waiting more than 30 minutes and a conversation whose window closes within two hours.
+**Expect** the four cards (drafts to approve, waiting for your reply, open tasks with the late count, median first reply) and a **Needs attention** list with one line per problem, worst first. A failed send you have already sent again should NOT be listed.
+**Tell me** whether the median first reply matches your feel, and whether anything you consider urgent is missing from the list.
+
+### 30. Sign off
+
+Tell me which steps passed and which surprised you. Phase 6 (analytics, hardening, deployment) does not depend on these, so the build continues without waiting.
+
