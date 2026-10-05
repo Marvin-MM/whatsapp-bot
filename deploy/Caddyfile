@@ -1,0 +1,26 @@
+# Production reverse proxy: automatic HTTPS (Let's Encrypt), then plain http to the web container on the private compose network.
+# {$APP_DOMAIN} comes from the compose environment (the public host name you pointed at this server).
+{$APP_DOMAIN} {
+	# Never trust a forwarded address from the client: login rate limiting (5 attempts / 15 min / IP) keys on X-Forwarded-For, so the
+	# proxy must OVERWRITE it with the address it actually saw, not append to whatever the caller sent.
+	reverse_proxy web:3000 {
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+		# Server-sent events (/api/events) must reach the browser as they happen, not in buffered chunks.
+		flush_interval -1
+	}
+
+	# Compression, except for the event stream (it would hold events back to fill a compression block).
+	@compressible not path /api/events
+	encode @compressible zstd gzip
+
+	# The webhook accepts at most 3 MiB (the app enforces it too); nothing else on this site takes a large body.
+	request_body {
+		max_size 4MB
+	}
+
+	log {
+		output stdout
+		format json
+	}
+}

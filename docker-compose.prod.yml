@@ -1,0 +1,161 @@
+# Production stack: Caddy (automatic HTTPS) -> web, plus worker, Postgres 16, Redis 7 and a one-shot migration step.
+# One server, one instance of each process (this is a single-owner system: no scaling, no replicas).
+#
+#   cp .env.example .env     # then fill it in, and ALSO add the five deploy-only values listed in docs/operations/production.md
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Compose reads .env from this directory for the ${...} values below. Containers receive ONLY what is listed here (no `env_file`), so the
+# database and Redis passwords reach exactly the services that need them: web and worker never see the migration role's password.
+name: wab
+
+x-app-env: &app-env
+  NODE_ENV: production
+  APP_URL: ${APP_URL:?set APP_URL to your public https address}
+  DATABASE_URL: postgres://wab_app:${WAB_APP_PASSWORD:?set WAB_APP_PASSWORD}@postgres:5432/wab
+  # Required by the env schema, used only by `pnpm db:migrate`. Web and worker are given the RUNTIME role's URL here, never the migrator's.
+  DATABASE_MIGRATION_URL: postgres://wab_app:${WAB_APP_PASSWORD}@postgres:5432/wab
+  DATABASE_POOLER: ${DATABASE_POOLER:-}
+  REDIS_URL: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+  BULLMQ_PREFIX: ${BULLMQ_PREFIX:-}
+  LOG_LEVEL: ${LOG_LEVEL:-}
+  OWNER_TIMEZONE: ${OWNER_TIMEZONE:?}
+  BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?}
+  BETTER_AUTH_URL: ${BETTER_AUTH_URL:?}
+  OWNER_EMAIL: ${OWNER_EMAIL:?}
+  META_GRAPH_VERSION: ${META_GRAPH_VERSION:?}
+  META_APP_SECRET: ${META_APP_SECRET:?}
+  WEBHOOK_VERIFY_TOKEN: ${WEBHOOK_VERIFY_TOKEN:?}
+  WHATSAPP_ACCESS_TOKEN: ${WHATSAPP_ACCESS_TOKEN:?}
+  WHATSAPP_PHONE_NUMBER_ID: ${WHATSAPP_PHONE_NUMBER_ID:?}
+  WHATSAPP_WABA_ID: ${WHATSAPP_WABA_ID:?}
+  GROQ_API_KEY: ${GROQ_API_KEY:?}
+  LLM_MODEL_DRAFT: ${LLM_MODEL_DRAFT:?}
+  LLM_MODEL_ANALYSIS: ${LLM_MODEL_ANALYSIS:?}
+  LLM_MODEL_VERIFY: ${LLM_MODEL_VERIFY:?}
+  LLM_MODEL_TRANSCRIBE: ${LLM_MODEL_TRANSCRIBE:?}
+  TRANSCRIBE_AUDIO: ${TRANSCRIBE_AUDIO:-}
+  DRAFT_DEBOUNCE_SECONDS: ${DRAFT_DEBOUNCE_SECONDS:-}
+  AUTOPILOT_MAX_EDIT_DISTANCE: ${AUTOPILOT_MAX_EDIT_DISTANCE:-}
+  AI_PRICE_PER_MTOK_JSON: ${AI_PRICE_PER_MTOK_JSON:-}
+  # The container's own path; the host directory ./data/media is mounted here (see the volumes below).
+  MEDIA_STORAGE_DIR: /app/data/media
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?}
+  TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:?}
+  TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:?}
+
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN to the public host name (no scheme), e.g. assistant.example.com}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+
+  web:
+    build: .
+    image: wab:local
+    restart: unless-stopped
+    environment: *app-env
+    expose:
+      - "3000"
+    volumes:
+      # A host directory (not a named volume) so backup.sh can archive it. It must be writable by uid 10001: see docs/operations/production.md.
+      - ./data/media:/app/data/media
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  worker:
+    image: wab:local
+    restart: unless-stopped
+    command: ["node_modules/.bin/tsx", "--conditions=react-server", "worker/index.ts"]
+    environment: *app-env
+    volumes:
+      - ./data/media:/app/data/media
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    # Shows in `docker compose ps`. Docker does not restart an unhealthy container by itself: point an uptime monitor at
+    # https://<your domain>/api/health/worker to be told when the worker stops.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://web:3000/api/health/worker').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+  # One-shot: applies migrations as the owning role, then exits. web and worker wait for it to succeed.
+  migrate:
+    image: wab:local
+    build: .
+    restart: "no"
+    command: ["node_modules/.bin/tsx", "--conditions=react-server", "scripts/migrate.ts"]
+    environment:
+      NODE_ENV: production
+      DATABASE_MIGRATION_URL: postgres://wab_migrator:${WAB_MIGRATOR_PASSWORD:?set WAB_MIGRATOR_PASSWORD}@postgres:5432/wab
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: postgres
+      WAB_MIGRATOR_PASSWORD: ${WAB_MIGRATOR_PASSWORD}
+      WAB_APP_PASSWORD: ${WAB_APP_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates the two roles and the database on the FIRST start of an empty volume only.
+      - ./scripts/db-init-prod:/docker-entrypoint-initdb.d:ro
+    # Loopback only: reachable from this server (backup.sh, psql) and from nothing else.
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    restart: unless-stopped
+    # noeviction: BullMQ must never lose a queue key to memory pressure. The password keeps other containers' mistakes out.
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--appendonly", "yes", "--maxmemory-policy", "noeviction"]
+    environment:
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:

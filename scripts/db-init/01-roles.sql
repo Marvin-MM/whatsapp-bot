@@ -26,8 +26,14 @@ WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'wab') \gexec
 SELECT 'CREATE DATABASE wab_test OWNER wab_migrator'
 WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'wab_test') \gexec
 
+-- The integration tests restore a backup into this one (test/integration/backup-restore.test.ts), emptying it first.
+SELECT 'CREATE DATABASE wab_restore_test OWNER wab_migrator'
+WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'wab_restore_test') \gexec
+
 ALTER DATABASE wab OWNER TO wab_migrator;
 ALTER DATABASE wab_test OWNER TO wab_migrator;
+ALTER DATABASE wab_restore_test OWNER TO wab_migrator;
 
 GRANT CONNECT ON DATABASE wab TO wab_app;
 GRANT CONNECT ON DATABASE wab_test TO wab_app;
+GRANT CONNECT ON DATABASE wab_restore_test TO wab_app;

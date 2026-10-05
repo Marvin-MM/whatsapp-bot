@@ -5,12 +5,13 @@ the system drafts replies in the owner's own writing style, keeps a rolling summ
 owner owes, and shows everything on a real-time, mobile-first dashboard. Nothing is sent without the owner's explicit action
 (autopilot is a later, opt-in, gated phase).
 
-> **Status: Phase 5 of 8 (summaries, tasks, follow-ups).** On top of Phase 4 (drafts you approve): after you reply, the system keeps a **short summary** of
-> each conversation and **notes what you promised or were asked to do** as tasks, which you manage on **Tasks**; the **Overview** shows what is slipping
-> (overdue tasks, windows closing, drafts waiting, failed messages) and how fast you are answering. **Nothing is ever sent without your explicit
-> approval.** The optional autopilot is Phase 7. What is and is not done is in [`docs/phase-reports/phase-5.md`](docs/phase-reports/phase-5.md); the checks
-> only you can do (real chats, the real model, a real phone) are in [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately
-> differs from the original spec is in [`DECISIONS.md`](DECISIONS.md).
+> **Status: Phase 6 of 8 (analytics and production hardening).** On top of Phase 5 (summaries, tasks, follow-ups): **Analytics** shows how close the drafts
+> are to what you actually send, how fast you answer and what the model costs; **Settings** is split into General, Business profile, **Problems** (failed
+> messages and failed background jobs, with safe retry) and an **Audit log**; the app sends strict security headers; and there is a production stack
+> (Caddy + Docker Compose) with **backups that are proven by restoring them**. **Nothing is ever sent without your explicit approval.** The optional
+> autopilot is Phase 7. What is and is not done is in [`docs/phase-reports/phase-6.md`](docs/phase-reports/phase-6.md); the checks only you can do (real
+> chats, the real model, a real phone, a real server) are in [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately differs from the
+> original spec is in [`DECISIONS.md`](DECISIONS.md).
 
 ## Privacy: who sees customer messages
 
@@ -48,7 +49,7 @@ curl -s https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_AP
 ### Without Docker (native Postgres and Redis)
 
 ```bash
-sudo -u postgres psql -v ON_ERROR_STOP=1 -f scripts/db-init/01-roles.sql   # roles wab_migrator / wab_app + databases wab, wab_test
+sudo -u postgres psql -v ON_ERROR_STOP=1 -f scripts/db-init/01-roles.sql   # roles wab_migrator / wab_app + databases wab, wab_test, wab_restore_test
 redis-server --maxmemory-policy noeviction --daemonize yes                  # BullMQ requires noeviction
 ```
 
@@ -168,6 +169,57 @@ conversation per 10 minutes, a digest when more than 5 are waiting, silent durin
 - The summary and tasks cost one small model call per reply. **Turn AI off** in Settings and they stop too (they catch up on the next reply after you turn
   it back on).
 
+## Analytics
+
+**Analytics** (7, 30 or 90 days, in your time zone) answers one question first: *how close are the drafts to what you send?* The chart is the
+**edit distance** between each draft and the reply you finally sent (0 = sent exactly as drafted, 1 = completely rewritten), as a median and a 75th
+percentile per day, with the autopilot threshold drawn as a line: it is the number that decides whether autopilot may ever be switched on. Below it:
+messages per day, your **median first-reply time** (from a customer's message to your next accepted reply; imports, reactions and failed sends do not
+count), what happened to every draft (sent as written, edited, rejected, replaced, failed), tasks by kind, and model usage. Every chart has a
+**Show the numbers** table. **Cost** appears only if you set `AI_PRICE_PER_MTOK_JSON` (your own prices per million tokens, copied from Groq's pricing
+page): the app has no built-in prices, so without it you see tokens, never an invented cost.
+
+## Settings
+
+- **General**: the kill switches, the WhatsApp connection (when Meta last reached you, the backlog, history-import progress, recent alerts, the webhook
+  URL and fields), the **background worker's status**, the token check, and Telegram alerts.
+- **Business profile**: the only source of facts the assistant may state.
+- **Problems**: messages that failed or could not be confirmed, and **failed background jobs** (a draft, a summary, a download, an incoming event that the
+  worker gave up on, kept 30 days). **Retry** runs a job again where that is safe; for a send that may already have reached a customer it is disabled and
+  says why (check your phone from the conversation instead). **Dismiss** only clears the record.
+- **Audit log**: every change made through the dashboard (who, what, which record, when), newest first, filterable. It holds ids and kinds, never what a
+  message said, and the database does not allow editing or deleting it.
+
+## Production
+
+`docker-compose.prod.yml` runs Caddy (automatic HTTPS), the web app, the worker, Postgres 16 and Redis 7 on one server, with a one-shot migration step.
+Start with **[docs/operations/production.md](docs/operations/production.md)** (deploy, update, health checks, hardening, a first-deploy checklist).
+
+The app sends a strict **Content-Security-Policy** (scripts run only with a per-request nonce), `X-Frame-Options: DENY`, `Referrer-Policy: same-origin`,
+`X-Content-Type-Options: nosniff` and, when `APP_URL` is https, HSTS. Health: `GET /api/health` (database + Redis) and `GET /api/health/worker` (200, or 503
+once the worker's heartbeat is older than 45 seconds): point an uptime monitor at both.
+
+## Backups
+
+`scripts/backup.sh` writes a consistent snapshot of the database and the media directory, optionally encrypted (`age`) and copied off the server
+(`rclone`); `scripts/restore.sh` restores it into an empty database and **proves** it by comparing every table's row count with the backup. A backup you
+have never restored is a hope: rehearse monthly. Everything, including the monthly drill and what to do after losing the server, is in
+**[docs/operations/backup-restore.md](docs/operations/backup-restore.md)**.
+
+## Troubleshooting
+
+| Symptom | Likely cause and what to do |
+|---|---|
+| Meta cannot verify the callback URL | The verify token in Meta's console differs from `WEBHOOK_VERIFY_TOKEN`, or the URL is not the public https address ending `/api/webhooks/whatsapp`. Open it in a browser: a `403` means the app is reachable and the token is wrong |
+| Messages do not appear | Settings -> General says when Meta last reached you. Never: the callback URL or the subscribed fields (list under Settings) are wrong. Recently but nothing shows: is the **worker** running (General -> Background worker)? |
+| "Background worker: Not running" | `docker compose -f docker-compose.prod.yml logs worker` (or your `pnpm worker` terminal). Usually Redis unreachable or an invalid environment variable: the log names it |
+| A reply says "Not confirmed" | A timeout, or the worker stopped mid-send. Check your phone, then press **It arrived** or **It did not arrive: send again**. The system never resends by itself |
+| No drafts appear | Settings -> General: is **AI** paused? Settings -> Problems: a failed draft job names the reason (a wrong or exhausted Groq key, a model Groq has retired: check `LLM_MODEL_*`) |
+| "Too many attempts" at login | Five wrong tries per address per 15 minutes: wait 15 minutes. Behind a proxy that does not overwrite `X-Forwarded-For`, everyone shares one address: see the production doc |
+| Lost your authenticator | On the server: `pnpm seed:owner --reset` (in Docker: `... run --rm web node_modules/.bin/tsx --conditions=react-server scripts/seed-owner.ts --reset`) |
+| A blank page or broken buttons, and the browser console mentions "Content Security Policy" | A script or style was blocked: report the exact message (the policy is meant to have zero violations) |
+| The disk is filling | `data/media` and `backups/` grow; Postgres stops when the disk is full. Delete old local backups (`BACKUP_KEEP`) and check `df -h` |
+
 ## Testing against the real model
 
 `pnpm test:ai` asks the real draft model a handful of adversarial and fact-checking questions (an injection, a request for its instructions, "are you a
@@ -187,6 +239,8 @@ read the numbers. It uses the throwaway `_test` database.
 | `pnpm import:chats <path>` | Import WhatsApp chat exports (`--me`, `--dry-run`, `--contact`, `--date-order`) |
 | `pnpm eval:drafts` | Measure draft quality against your most recent real replies (needs `GROQ_API_KEY`) |
 | `pnpm seed:owner` | Create the owner and enroll TOTP (`--help`; `--reset` after losing your authenticator) |
+| `scripts/backup.sh [config]` | Back up the database and media (snapshot, optional `age` encryption and `rclone` upload). See `docs/operations/backup-restore.md` |
+| `scripts/restore.sh <folder> [config]` | Restore a backup into an EMPTY database and verify it row by row |
 | `pnpm typecheck` / `pnpm lint` | `tsc --noEmit` / ESLint |
 | `pnpm test` | Unit tests (no services needed) |
 | `pnpm test:integration` | Integration tests against real Postgres + Redis (database must end in `_test`, Redis db 15) |
@@ -215,7 +269,5 @@ read the numbers. It uses the throwaway `_test` database.
 | 3 | Chat import, style extraction, few-shot retrieval, evaluation harness | done (real-model checks: `docs/ACCEPTANCE.md`) |
 | 4 | Drafting + `/approvals` | done (real-model and real-phone checks: `docs/ACCEPTANCE.md`) |
 | 5 | Summaries, tasks, follow-ups | done (real-model checks: `docs/ACCEPTANCE.md`) |
-| 6 | Analytics, hardening, production deploy, backups | |
+| 6 | Analytics, hardening, production deploy, backups | done (a real deploy and a real restore drill: `docs/ACCEPTANCE.md`) |
 | 7 | Autopilot (gated by measured quality) | |
-
-Not yet documented here (written in the phase that needs it): production deployment, backup and restore.

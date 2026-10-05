@@ -19,6 +19,8 @@ COPY --from=build /app /app
 RUN useradd --system --uid 10001 --create-home app && mkdir -p /app/data/media && chown -R app /app/data
 USER app
 EXPOSE 3000
-# Default: the web app. The worker runs the same image with `pnpm worker`;
-# migrations run as a separate deploy step: `pnpm db:migrate` (never during `next build`).
-CMD ["pnpm", "start"]
+# Default: the web app. The worker and the one-off migration run the same image with another command (see docker-compose.prod.yml);
+# migrations are a deploy step, never part of `next build`.
+# The binaries are started directly, not through `pnpm`: pnpm itself is fetched by corepack on first use, which a locked-down production
+# container may not be able to do (and must not need to).
+CMD ["node_modules/.bin/next", "start"]
