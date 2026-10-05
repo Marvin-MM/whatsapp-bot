@@ -31,9 +31,10 @@ describe('there is ONE send path', () => {
     expect(offenders.map((file) => file.path)).toEqual([]);
   });
 
-  it('only the ingest handlers and send-message.ts insert into the messages table', () => {
+  it('only the ingest handlers, the chat importer and send-message.ts insert into the messages table', () => {
     const inserters = files.filter((file) => /\.insert\(messages\)/.test(file.text)).map((file) => file.path).sort();
-    expect(inserters).toEqual(['src/lib/ingest/echoes.ts', 'src/lib/ingest/history.ts', 'src/lib/ingest/messages.ts', 'src/lib/send/send-message.ts']);
+    // The importer writes finished history (`imported`, status sent / received); it can never produce a `queued` row, and the test below proves it.
+    expect(inserters).toEqual(['src/lib/import/import-chat.ts', 'src/lib/ingest/echoes.ts', 'src/lib/ingest/history.ts', 'src/lib/ingest/messages.ts', 'src/lib/send/send-message.ts']);
   });
 
   it('only send-message.ts creates OUTBOUND rows that Meta has not seen yet (status queued)', () => {

@@ -16,6 +16,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --conditions=react-server --env-file-if-exists=.env scripts/migrate.ts",
     "seed:owner": "tsx --conditions=react-server --env-file-if-exists=.env scripts/seed-owner.ts",
+    "import:chats": "tsx --conditions=react-server --env-file-if-exists=.env scripts/import-chats.ts",
     "test": "vitest run --config vitest.config.ts",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit",
