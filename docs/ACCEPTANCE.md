@@ -125,3 +125,28 @@ answers the way the mocks do. **Do these on a number you can afford to experimen
 ### 15. Sign off
 
 Tell me which steps passed, which surprised you, and any Meta error codes you saw. Phase 3 (chat import, style, evaluation) does not depend on these, so the build continues without waiting; whatever these find goes to the front of the queue.
+
+---
+
+## Phase 3: your chats, your style, and the first measurement
+
+These need your real WhatsApp exports and your Groq key. Everything was proven in the sandbox with fake exports and a fake model.
+
+### 16. Import your chats
+
+**Do** Export 5-10 real customer chats (WhatsApp -> chat -> More -> Export chat -> Without media), put the `.txt` files in a folder, run `pnpm import:chats ./folder --dry-run --me "<your name as it appears in the export>"`, then without `--dry-run`.
+**Expect** per file a line like `Amina.txt: 312 imported (140 yours, 172 theirs), 4 deleted skipped, 9 photos/files noted`; no `WARNING` about dates (if there is one, spot-check a few dates in the dashboard and re-run with `--date-order`); the chats under **Resolved** in the dashboard with the right times in your time zone; "Imported" on the messages; no window badge "Open". Running the same command again imports **0**.
+**If not** a file that is skipped says why. **Tell me** if (a) your export looks different from the two formats in the README (a different phone language or WhatsApp version: send me a few lines with names and numbers changed), (b) a date is off, (c) your own name matched nothing.
+
+### 17. The first measurement (the one that matters most)
+
+**Do** Write your business profile (Settings), extract a style guide on **Style** and activate it, then run `pnpm eval:drafts`. Open the report it prints (`eval/results/<time>.md`).
+**Expect** a table with the median edit distance (0 = identical to what you wrote, 1 = nothing in common), the invented-fact rate and 15 side-by-side samples (customer message, what you wrote, the draft).
+**Then tell me**: (a) the numbers, (b) whether the side-by-side drafts sound like you, **especially the Luganda and mixed ones** (the model may simply not be good at Luganda; that is a finding, not a bug), (c) every invented fact the report lists: is it really invented, or did the detector misread (for example a number that was in the customer's message but written differently)? I will paste the baseline into DECISIONS.md and tune the prompt from your answers. The spec's rule applies from here on: a change ships only if the median edit distance does not get worse and invented facts do not increase.
+**If not** `Only N of your replies have a customer message before them` = import more chats first. `too many drafts failed` = check `GROQ_API_KEY` and the `LLM_MODEL_*` names in `.env` (`curl -s https://api.groq.com/openai/v1/models -H "Authorization: Bearer $GROQ_API_KEY"`).
+
+### 18. Is the style guide you?
+
+**Do** Read the active guide on **Style**. For each field ask: is this how I write?
+**Expect** things you would recognise (your greetings, your emoji, your habit of answering first), and a "Never says" list containing stiff phrases you would never use.
+**If not** tell me what is wrong or missing; wrong claims usually mean the sample was too small or too repetitive (re-extract after importing more).

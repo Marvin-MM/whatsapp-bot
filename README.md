@@ -5,13 +5,12 @@ the system drafts replies in the owner's own writing style, keeps a rolling summ
 owner owes, and shows everything on a real-time, mobile-first dashboard. Nothing is sent without the owner's explicit action
 (autopilot is a later, opt-in, gated phase).
 
-> **Status: Phase 2 of 8 (manual sending).** Everything from Phase 1 (ingest, media, live dashboard), plus: you can **reply from
-> the dashboard** (typed replies and approved templates), the send path is crash-safe (a message is never sent twice, and one
-> whose delivery we cannot confirm is handed to you, never guessed at), the 24-hour window is enforced and counted down live,
-> the **kill switches** work from Settings, and alerts reach you on **Telegram**. There is **no AI drafting yet** (Phase 3-4).
-> What is and is not done is in [`docs/phase-reports/phase-2.md`](docs/phase-reports/phase-2.md); the checks only you can do
-> (real Meta, real Telegram) are in [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately differs from
-> the original spec is in [`DECISIONS.md`](DECISIONS.md).
+> **Status: Phase 3 of 8 (corpus, style, evaluation).** On top of Phase 2 (reading, sending, kill switches, Telegram alerts): you can
+> **import your past WhatsApp chats**, have the system **learn your writing style** (a readable, versioned guide you activate yourself), write the
+> **business profile** that is the only source of facts it may state, and **measure** how close its drafts get to what you really wrote.
+> **Nothing drafts replies for you yet** (that is Phase 4); the machinery and the measuring stick are what this phase delivers. What is and is
+> not done is in [`docs/phase-reports/phase-3.md`](docs/phase-reports/phase-3.md); the checks only you can do (real chats, the real model) are in
+> [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately differs from the original spec is in [`DECISIONS.md`](DECISIONS.md).
 
 ## Privacy: who sees customer messages
 
@@ -119,6 +118,22 @@ your Telegram chat. They are **notifications only** and never contain message te
 - **Worker required.** Sending, retries and the safety-net scans (`alerts-scan` every 5 min, token check daily, 30-day payload purge)
   all run in the worker. Settings -> "Messages that need attention" lists anything that failed, was not confirmed or is still queued.
 
+## Teaching it your style
+
+1. **Export your chats** from the WhatsApp app: open a customer chat -> menu -> *More* -> *Export chat* -> *Without media*. You get a `.txt` per
+   customer. Put them in a folder.
+2. **Import them**: `pnpm import:chats ./my-exports --me "Your Name"` where the name is exactly how you appear in the export (leave `--me` out and
+   it asks). Add `--dry-run` first to see what it would do. It is safe to run again: nothing is imported twice, and messages WhatsApp already
+   delivered to the dashboard are not duplicated. Group chats are refused. If a file's dates cannot tell day/month from month/day it says so;
+   `--date-order dmy|mdy` fixes it. Imported chats appear under **Resolved**.
+3. **Write your business profile** in **Settings -> Business profile**: prices, stock rules, delivery, hours, policies. It is the **only**
+   source of facts the assistant may state: anything not there becomes a `[[placeholder]]` you must fill in before a draft can be sent.
+4. **Extract a style guide** on **Style** (needs at least 30 of your own messages). Read it; compare it with the active one; **Activate** it.
+   Until one is active, drafts are plain and short.
+5. **Measure**: `pnpm eval:drafts` holds out your 50 most recent real replies, drafts each with the current prompt, model and style guide,
+   and writes `eval/results/<time>.md`. Run it before and after any change to the prompt, the model or the style guide: a change ships only
+   if the median edit distance did not get worse and no new invented facts appeared. The report contains real messages: keep it local.
+
 ## Scripts
 
 | Command | What it does |
@@ -127,6 +142,8 @@ your Telegram chat. They are **notifications only** and never contain message te
 | `pnpm dev:worker` / `pnpm worker` | BullMQ workers and schedulers (`tsx --conditions=react-server`) |
 | `pnpm db:generate` | Generate a SQL migration from `src/lib/db/schema.ts` (`--custom` for hand-written SQL) |
 | `pnpm db:migrate` | Apply migrations with `DATABASE_MIGRATION_URL`. **Never runs during `next build`.** |
+| `pnpm import:chats <path>` | Import WhatsApp chat exports (`--me`, `--dry-run`, `--contact`, `--date-order`) |
+| `pnpm eval:drafts` | Measure draft quality against your most recent real replies (needs `GROQ_API_KEY`) |
 | `pnpm seed:owner` | Create the owner and enroll TOTP (`--help`; `--reset` after losing your authenticator) |
 | `pnpm typecheck` / `pnpm lint` | `tsc --noEmit` / ESLint |
 | `pnpm test` | Unit tests (no services needed) |
@@ -152,7 +169,7 @@ your Telegram chat. They are **notifications only** and never contain message te
 | 0 | Scaffold, schema, auth + TOTP, shell, worker runtime, state machines | done |
 | 1 | WhatsApp webhook ingest (incl. Coexistence echoes/history), media, live read-only dashboard | done (real-Meta checks: `docs/ACCEPTANCE.md`) |
 | 2 | Manual send path, templates, kill switches, Telegram notifications | done (real-Meta checks: `docs/ACCEPTANCE.md`) |
-| 3 | Chat import, style extraction, few-shot retrieval, evaluation harness | |
+| 3 | Chat import, style extraction, few-shot retrieval, evaluation harness | done (real-model checks: `docs/ACCEPTANCE.md`) |
 | 4 | Drafting + `/approvals` | |
 | 5 | Summaries, tasks, follow-ups | |
 | 6 | Analytics, hardening, production deploy, backups | |

@@ -100,6 +100,11 @@ that has never failed has proven nothing: mutation-check security tests. Real-mo
   row (a static test enforces it). Retry only when Meta definitively did not send; timeout / reset / unreadable / 5xx-without-body =
   `unknown`, never retried, never resent by code (the owner marks it sent or resends). Enqueue after commit through `afterCommit`.
   A server action never makes a network call inside its transaction (templates are read from the Redis cache the picker warmed).
+- **Style and drafting (Phase 3)**: learning reads ONLY the owner's own words (`ELIGIBLE_OWNER_PROVENANCE` in `fewshot-sql.ts`: never `ai_unedited` /
+  `ai_autopilot`); every person-written or model-written string put in a prompt goes through `sanitizeForPrompt`; stage rules live in `stages.ts` AND
+  `fewshot-sql.ts` (a parity test keeps them equal: change both); the draft prompt is versioned (`DRAFT_PROMPT_VERSION`): any change to it, the
+  model or the style guide requires `pnpm eval:drafts` and a note in DECISIONS.md; imported messages are provenance `imported` on BOTH sides and
+  can never open the 24h window.
 - **Notifications**: alerts go through `raiseAlert` (deduped); the Telegram sink is registered in the worker only; `info` alerts are
   dashboard-only; quiet hours silence everything but critical; no message bodies in any notification or audit entry.
 - **Test infra**: `setupIngestHarness()` for ingest tests (not `use*`: the React-hooks lint rule trips on the prefix). Every guard test is

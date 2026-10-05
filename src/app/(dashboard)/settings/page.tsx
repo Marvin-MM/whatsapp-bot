@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { ProfileEditor } from '@/components/settings/profile-editor';
 import { KillSwitchControls } from '@/components/settings/kill-switch-controls';
 import { TelegramSettings } from '@/components/settings/telegram-settings';
 import { TokenHealth } from '@/components/settings/token-health';
@@ -46,13 +47,27 @@ export default async function SettingsPage() {
   const env = getEnv();
   const db = getDb();
   const [health, shell, problems, tokenHealth] = await Promise.all([getIngestHealth(db), getShellState(), getProblemMessages(db), readTokenHealth()]);
-  const [prefs] = await db.select({ notifyTelegram: settings.notifyTelegram, quietHours: settings.quietHours }).from(settings).where(eq(settings.id, 1)).limit(1);
+  const [prefs] = await db
+    .select({ notifyTelegram: settings.notifyTelegram, quietHours: settings.quietHours, ownerName: settings.ownerName, businessName: settings.businessName, businessProfile: settings.businessProfile })
+    .from(settings)
+    .where(eq(settings.id, 1))
+    .limit(1);
   const when = (date: Date | null) => (date ? formatFullTimestamp(date, env.OWNER_TIMEZONE) : 'Never');
   const webhookUrl = `${env.APP_URL.replace(/\/$/, '')}/api/webhooks/whatsapp`;
 
   return (
     <>
       <PageHeader title="Settings" description="WhatsApp connection, business profile, kill switches and audit log." />
+
+      <Card className="mb-6">
+        <CardHeader>
+          <CardTitle>Business profile</CardTitle>
+          <CardDescription>What the assistant is allowed to say about your business.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ProfileEditor ownerName={prefs?.ownerName ?? ''} businessName={prefs?.businessName ?? ''} businessProfile={prefs?.businessProfile ?? ''} />
+        </CardContent>
+      </Card>
 
       <Card className="mb-6">
         <CardHeader>

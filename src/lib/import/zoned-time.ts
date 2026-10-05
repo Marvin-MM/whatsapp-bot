@@ -40,6 +40,11 @@ function wallAsUtc(utcMs: number, timeZone: string): number {
   return Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
 }
 
+/** The zone's offset from UTC at an instant, in milliseconds (positive east of Greenwich). */
+export function zonedOffsetMs(date: Date, timeZone: string): number {
+  return wallAsUtc(date.getTime(), timeZone) - date.getTime();
+}
+
 export function isValidWallTime(wall: WallTime): boolean {
   const date = new Date(Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour, wall.minute, wall.second));
   return (
