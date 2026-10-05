@@ -2,6 +2,7 @@ import 'server-only';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Tx } from '@/lib/db';
 import { drafts } from '@/lib/db/schema';
+import type { Effect } from '@/lib/ingest/effects';
 import { draftStatusesAllowing } from '@/lib/state/draft-machine';
 
 /**
@@ -12,7 +13,8 @@ import { draftStatusesAllowing } from '@/lib/state/draft-machine';
  * stays the single authority. The UPDATE is conditional on the status, so a draft the owner approved a millisecond
  * earlier is left alone and the caller is told only about the rows that really changed.
  *
- * Callers that hold delayed autopilot jobs for these drafts must remove them after commit (Phase 7).
+ * A draft that was scheduled for autopilot has a countdown job and a Telegram message with buttons: callers turn the returned ids into effects with
+ * `supersededEffects`, which tell the dashboard and retire both.
  */
 export async function supersedeOpenDrafts(tx: Tx, conversationId: string): Promise<string[]> {
   const rows = await tx
@@ -40,4 +42,12 @@ export async function supersedeDraftsTriggeredBy(tx: Tx, conversationId: string,
     )
     .returning({ id: drafts.id });
   return rows.map((row) => row.id);
+}
+
+/** After commit: the dashboard hears that each draft was replaced, and any autopilot countdown for it is removed (and its Telegram message closed). */
+export function supersededEffects(conversationId: string, draftIds: readonly string[], note = 'Not sent: the conversation moved on.'): Effect[] {
+  return draftIds.flatMap((draftId): Effect[] => [
+    { type: 'publish', event: { type: 'draft:updated', payload: { conversationId, draftId, status: 'superseded' } } },
+    { type: 'retire_autopilot', draftId, note },
+  ]);
 }

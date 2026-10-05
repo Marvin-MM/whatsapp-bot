@@ -1,6 +1,7 @@
 import 'server-only';
 import { and, eq, inArray } from 'drizzle-orm';
 import { raiseAlert } from '@/lib/alerts';
+import { runAutopilotForDraft } from '@/lib/autopilot/decide';
 import { generateDraftFromContext, loadDraftContext } from '@/lib/ai/draft';
 import { AiProviderError } from '@/lib/ai/errors';
 import { DRAFT_PROMPT_VERSION } from '@/lib/ai/prompts/draft';
@@ -10,7 +11,7 @@ import { conversations, drafts, settings } from '@/lib/db/schema';
 import { type Effect, runEffects } from '@/lib/ingest/effects';
 import { logger } from '@/lib/logger';
 import { notifyDraftReady } from '@/lib/notify/draft-ready';
-import { supersedeOpenDrafts } from './supersede';
+import { supersedeOpenDrafts, supersededEffects } from './supersede';
 import { draftTriggerEffect } from './trigger';
 import { loadUnanswered, sameIds } from './unanswered';
 
@@ -141,9 +142,7 @@ export async function generateDraftForConversation(conversationId: string, optio
     if (!sameIds((await loadUnanswered(tx, conversationId)).map((m) => m.id), ids)) return { outcome: 'discarded_stale', effects: [] };
 
     const effects: Effect[] = [];
-    for (const staleId of await supersedeOpenDrafts(tx, conversationId)) {
-      effects.push({ type: 'publish', event: { type: 'draft:updated', payload: { conversationId, draftId: staleId, status: 'superseded' } } });
-    }
+    effects.push(...supersededEffects(conversationId, await supersedeOpenDrafts(tx, conversationId), 'Not sent: a newer draft replaced it.'));
     const { output } = result;
     const [row] = await tx
       .insert(drafts)
@@ -173,8 +172,14 @@ export async function generateDraftForConversation(conversationId: string, optio
 
   try {
     await runEffects(saved.effects);
-    // A phone buzz is for a draft that needs a decision, never for "ok" / "thanks".
-    if (saved.outcome === 'created' && saved.draftId) await notifyDraftReady(db, { conversationId, draftId: saved.draftId, now });
+    if ((saved.outcome === 'created' || saved.outcome === 'no_reply_needed') && saved.draftId) {
+      // In a conversation on autopilot the draft is judged now (never throws, never sends). A draft it takes over (a countdown is running, or a
+      // plain "ok" was closed) needs no "ready for approval" ping; everything else is an ordinary draft.
+      const autopilot = await runAutopilotForDraft(db, saved.draftId, now);
+      const takenOver = autopilot.kind === 'scheduled' || autopilot.kind === 'closed_no_reply';
+      // A phone buzz is for a draft that needs a decision, never for "ok" / "thanks".
+      if (saved.outcome === 'created' && !takenOver) await notifyDraftReady(db, { conversationId, draftId: saved.draftId, now });
+    }
   } catch (error) {
     logger.warn({ error: error instanceof Error ? error.name : 'unknown' }, 'draft effects failed');
   }

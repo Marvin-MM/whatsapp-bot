@@ -2,7 +2,7 @@ import 'server-only';
 import { and, eq, inArray } from 'drizzle-orm';
 import type { Tx } from '@/lib/db';
 import { messages } from '@/lib/db/schema';
-import { supersedeDraftsTriggeredBy, supersedeOpenDrafts } from '@/lib/drafts/supersede';
+import { supersedeDraftsTriggeredBy, supersedeOpenDrafts, supersededEffects } from '@/lib/drafts/supersede';
 import { DRAFT_TRIGGER_TYPES, draftTriggerEffect } from '@/lib/drafts/trigger';
 import type { MessageItem, WebhookMessage } from '@/lib/whatsapp/webhook-schema';
 import { type IngestContext, type HandlerResult, RetryLaterError, nothing } from './context';
@@ -65,9 +65,7 @@ export async function applyEditOrRevoke(
   }
 
   if (direction === 'inbound') {
-    for (const draftId of await supersedeDraftsTriggeredBy(tx, target.conversationId, target.id)) {
-      effects.push({ type: 'publish', event: { type: 'draft:updated', payload: { conversationId: target.conversationId, draftId, status: 'superseded' } } });
-    }
+    effects.push(...supersededEffects(target.conversationId, await supersedeDraftsTriggeredBy(tx, target.conversationId, target.id), 'Not sent: the customer changed or deleted the message it answered.'));
   }
   effects.push({ type: 'publish', event: { type: 'conversation:updated', payload: { conversationId: target.conversationId } } });
   return { handled: true, result: { effects } };
@@ -153,9 +151,7 @@ export async function ingestInboundMessage(tx: Tx, item: MessageItem, ctx: Inges
   await refreshConversationAggregates(tx, conversationId);
   await setConversationStatus(tx, conversationId, 'waiting_on_me');
   // A new customer message makes any open draft stale (Phase 4 then drafts again for the whole unanswered batch).
-  for (const draftId of await supersedeOpenDrafts(tx, conversationId)) {
-    effects.push({ type: 'publish', event: { type: 'draft:updated', payload: { conversationId, draftId, status: 'superseded' } } });
-  }
+  effects.push(...supersededEffects(conversationId, await supersedeOpenDrafts(tx, conversationId), 'Not sent: the customer wrote again.'));
   effects.push(
     { type: 'publish', event: { type: 'message:new', payload: { conversationId, messageId: insertedId } } },
     { type: 'publish', event: { type: 'conversation:updated', payload: { conversationId } } },

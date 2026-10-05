@@ -1,5 +1,6 @@
 import type { Processor } from 'bullmq';
 import type { QueueName } from '@/lib/queue/names';
+import { autopilotSendProcessor } from './processors/autopilot-send';
 import { downloadMediaProcessor } from './processors/download-media';
 import { generateDraftProcessor } from './processors/generate-draft';
 import { outboundSendProcessor } from './processors/outbound-send';
@@ -24,6 +25,7 @@ export const WORKER_REGISTRATIONS: readonly WorkerRegistration[] = [
   { queue: 'download-media', processor: downloadMediaProcessor },
   { queue: 'generate-draft', processor: generateDraftProcessor },
   { queue: 'outbound-send', processor: outboundSendProcessor },
+  { queue: 'autopilot-send', processor: autopilotSendProcessor },
   { queue: 'post-send-analysis', processor: postSendAnalysisProcessor },
   { queue: 'style-extract', processor: styleExtractProcessor },
   { queue: 'scheduled', processor: scheduledProcessor },

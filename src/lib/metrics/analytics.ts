@@ -1,7 +1,7 @@
 import 'server-only';
 import { sql } from 'drizzle-orm';
 import { stampMinute } from '@/lib/ai/prompts/format';
-import type { Db } from '@/lib/db';
+import type { Db, DbOrTx } from '@/lib/db';
 import type { AiPriceList } from '@/lib/env';
 import { wallTimeToUtc } from '@/lib/import/zoned-time';
 import { answeredCte } from './response-time';
@@ -150,6 +150,21 @@ export interface EditDistanceDay {
 }
 
 /**
+ * The owner's track record: drafts the owner approved (as written or edited) between two instants, with the distance stored at approval.
+ * The Analytics page and the autopilot eligibility gate both read THIS query, so the number the owner looks at is the number the gate uses.
+ * A draft an autopilot sent has no stored distance and is therefore never part of the record it would be judged on.
+ */
+export async function editDistanceSummary(db: DbOrTx, since: Date, until: Date): Promise<{ n: number; median: number | null; p75: number | null; edited: number }> {
+  const rows = await db.execute<{ median: number | null; p75: number | null; n: number; edited: number }>(sql`
+    SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY edit_distance) AS median, percentile_cont(0.75) WITHIN GROUP (ORDER BY edit_distance) AS p75,
+           count(*)::int AS n, (count(*) FILTER (WHERE status = 'edited'))::int AS edited
+    FROM drafts
+    WHERE status IN ('approved', 'edited') AND edit_distance IS NOT NULL AND approved_at >= ${since.toISOString()}::timestamptz AND approved_at <= ${until.toISOString()}::timestamptz`);
+  const row = rows[0];
+  return { n: row?.n ?? 0, median: row?.median ?? null, p75: row?.p75 ?? null, edited: row?.edited ?? 0 };
+}
+
+/**
  * The primary chart (spec 12): how far the owner's final text is from the draft, by the day it was sent. Only drafts that were actually sent
  * (approved or edited) count; their distance was stored when they were approved. The same numbers feed the autopilot gate.
  */
@@ -159,23 +174,18 @@ export async function getEditDistance(db: Db, range: Range): Promise<{ byDay: Ed
     FROM drafts
     WHERE status IN ('approved', 'edited') AND edit_distance IS NOT NULL AND approved_at >= ${range.since.toISOString()}::timestamptz AND approved_at <= ${range.until.toISOString()}::timestamptz
     GROUP BY 1`);
-  const overall = await db.execute<{ median: number | null; p75: number | null; n: number; edited: number }>(sql`
-    SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY edit_distance) AS median, percentile_cont(0.75) WITHIN GROUP (ORDER BY edit_distance) AS p75,
-           count(*)::int AS n, (count(*) FILTER (WHERE status = 'edited'))::int AS edited
-    FROM drafts
-    WHERE status IN ('approved', 'edited') AND edit_distance IS NOT NULL AND approved_at >= ${range.since.toISOString()}::timestamptz AND approved_at <= ${range.until.toISOString()}::timestamptz`);
-  const total = overall[0];
-  const sent = total?.n ?? 0;
+  const total = await editDistanceSummary(db, range.since, range.until);
+  const sent = total.n;
   return {
     byDay: fill(
       range,
       daily.map((row) => ({ day: row.day, median: round(row.median), sent: row.n })),
       (day) => ({ day, median: null, sent: 0 }),
     ),
-    median: sent === 0 ? null : round(total?.median),
-    p75: sent === 0 ? null : round(total?.p75),
+    median: sent === 0 ? null : round(total.median),
+    p75: sent === 0 ? null : round(total.p75),
     sent,
-    editedShare: sent === 0 ? null : round((total?.edited ?? 0) / sent),
+    editedShare: sent === 0 ? null : round(total.edited / sent),
   };
 }
 

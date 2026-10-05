@@ -349,18 +349,17 @@ describe('setKillSwitch (the real server action)', () => {
     const owner = await createEnrolledOwner();
     requestHeaders.current = headersWith(owner.cookie);
 
-    expect(await setKillSwitch({ name: 'autopilot_paused', value: false })).toEqual({
-      ok: true,
-      data: { name: 'autopilot_paused', previous: true, value: false },
-    });
+    // Autopilot can only be switched ON once the eligibility gate passes (spec 10.1): a fresh install has no track record, so it is refused.
+    // (The gate itself is tested in autopilot-actions.test.ts.)
+    expect(await setKillSwitch({ name: 'autopilot_paused', value: false })).toMatchObject({ ok: false, error: { code: 'refused', reason: 'gate_failed' } });
     expect(await setKillSwitch({ name: 'ai_paused', value: true })).toMatchObject({ ok: true, data: { previous: false, value: true } });
     expect(await setKillSwitch({ name: 'sending_paused', value: true })).toMatchObject({ ok: true });
     expect(await setKillSwitch({ name: 'sending_paused', value: false })).toMatchObject({ ok: true, data: { previous: true, value: false } });
 
     const [row] = await db().select().from(settings);
-    expect(row).toMatchObject({ aiPaused: true, sendingPaused: false, autopilotPaused: false });
+    expect(row).toMatchObject({ aiPaused: true, sendingPaused: false, autopilotPaused: true });
     const audit = await db().select().from(auditLog).where(eq(auditLog.action, 'settings.kill_switch'));
-    expect(audit).toHaveLength(4);
+    expect(audit).toHaveLength(3);
   });
 
   it('rejects unknown switch names', async () => {

@@ -299,11 +299,20 @@ describe('queueMessage: approving a draft', () => {
     expect(await outboundCount()).toBe(0);
   });
 
-  it('an autopilot release is provenance ai_autopilot', async () => {
+  it('an autopilot release (of a draft whose countdown ran: `scheduled`) is provenance ai_autopilot', async () => {
     const { conversationId, inboundId } = await seedCustomer();
-    const draftId = await seedDraft(sql(), conversationId, 'pending', [inboundId]);
+    const draftId = await seedDraft(sql(), conversationId, 'scheduled', [inboundId]);
     const queued = await queue({ ...draftInput(conversationId, draftId, 'draft'), source: { kind: 'draft', draftId, finalContent: 'draft', overrideStale: false, autopilot: true } });
     expect((await row(queued.messageId))?.provenance).toBe('ai_autopilot');
+    expect((await sql()<{ status: string }[]>`SELECT status FROM drafts WHERE id = ${draftId}`)[0]?.status).toBe('approved');
+  });
+
+  it('the autopilot can NEVER release a draft that is not scheduled (it only sends what a countdown was started for): refused, nothing queued', async () => {
+    const { conversationId, inboundId } = await seedCustomer();
+    const draftId = await seedDraft(sql(), conversationId, 'pending', [inboundId]);
+    await expect(queue({ ...draftInput(conversationId, draftId, 'draft'), source: { kind: 'draft', draftId, finalContent: 'draft', overrideStale: false, autopilot: true } })).rejects.toMatchObject({ code: 'draft_not_open' });
+    expect(await count(sql(), 'messages', `direction = 'outbound'`)).toBe(0);
+    expect((await sql()<{ status: string }[]>`SELECT status FROM drafts WHERE id = ${draftId}`)[0]?.status).toBe('pending');
   });
 });
 
@@ -439,7 +448,7 @@ describe('performSend: one call to Meta, recorded exactly', () => {
     const { conversationId, inboundId } = await seedCustomer();
     const consecutive = async () => (await sql()<{ n: number }[]>`SELECT consecutive_auto_replies AS n FROM conversations WHERE id = ${conversationId}`)[0]?.n;
 
-    const draftId = await seedDraft(sql(), conversationId, 'pending', [inboundId]);
+    const draftId = await seedDraft(sql(), conversationId, 'scheduled', [inboundId]);
     const auto = await queue({
       conversationId,
       message: { kind: 'text', content: 'draft' },

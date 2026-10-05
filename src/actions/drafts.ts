@@ -3,6 +3,8 @@
 import { z } from 'zod';
 import { ActionRefusal, type ActionResult } from '@/lib/actions/owner-action-core';
 import { DraftRefused, approveDraft as approve, regenerateDraft as regenerate, rejectDraft as reject, requestDraftFor } from '@/lib/drafts/decide';
+import { retireAutopilotDraft } from '@/lib/autopilot/telegram';
+import { getDb } from '@/lib/db';
 import { enqueueDraftNow } from '@/lib/drafts/trigger';
 import { publishEvent } from '@/lib/realtime/publish';
 import { refusingOnSendRefused } from '@/lib/send/refusal';
@@ -75,7 +77,11 @@ const rejectAction = ownerAction({
     return {
       data: { conversationId },
       audit: { action: 'draft.reject', entityType: 'draft', entityId: input.draftId, metadata: { conversationId } },
-      afterCommit: () => tell(conversationId, input.draftId, 'rejected'),
+      afterCommit: async () => {
+        // A draft the autopilot was about to send: its countdown ends, and its Telegram buttons go.
+        await retireAutopilotDraft(getDb(), input.draftId, 'Not sent: you rejected it.');
+        await tell(conversationId, input.draftId, 'rejected');
+      },
     };
   },
 });
@@ -94,6 +100,7 @@ const regenerateAction = ownerAction({
       data: { conversationId },
       audit: { action: 'draft.regenerate', entityType: 'draft', entityId: input.draftId, metadata: { conversationId } },
       afterCommit: async () => {
+        await retireAutopilotDraft(getDb(), input.draftId, 'Not sent: you asked for a new draft.');
         await enqueueDraftNow(conversationId);
         await tell(conversationId, input.draftId, 'superseded');
       },

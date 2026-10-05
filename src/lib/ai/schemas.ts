@@ -43,3 +43,17 @@ export const analysisOutputSchema = z.object({
 
 export type AnalysisOutput = z.infer<typeof analysisOutputSchema>;
 export type AnalysisOperation = AnalysisOutput['operations'][number];
+
+/**
+ * What the autopilot verifier returns (spec 9.7). `verdict` comes last: the model lists what is wrong before it decides. Code does not trust
+ * `verdict` alone (`verifierPasses` in `autopilot/policy.ts` also needs both lists empty, `answersTheCustomer` and no tone risk).
+ */
+export const verifyOutputSchema = z.object({
+  unsupportedClaims: z.array(z.string().max(200)).max(20),
+  commitments: z.array(z.string().max(200)).max(20),
+  answersTheCustomer: z.boolean(),
+  toneRisk: z.boolean(),
+  verdict: z.enum(['pass', 'fail']),
+});
+
+export type VerifyOutput = z.infer<typeof verifyOutputSchema>;

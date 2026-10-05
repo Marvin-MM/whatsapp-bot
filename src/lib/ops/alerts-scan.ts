@@ -1,6 +1,7 @@
 import 'server-only';
 import type { Queue } from 'bullmq';
 import { sql } from 'drizzle-orm';
+import { repairAutopilotCountdowns } from '@/lib/autopilot/safety-net';
 import { type Db, getDb } from '@/lib/db';
 import type { MessageError } from '@/lib/db/schema';
 import { type Effect, runEffects } from '@/lib/ingest/effects';
@@ -23,6 +24,7 @@ import { transitionMessage } from '@/lib/state/message-machine';
  *  4. A customer message nobody drafted for (the draft job was lost: Redis flushed, the enqueue failed after the commit): drafted once more.
  *  5. An open task whose time has passed: the owner is told once (again if they move the time and it passes again).
  *  6. An owner reply the summary never covered (the analysis job was lost): analysed once more.
+ *  7. An autopilot countdown whose job was lost: started again once, or (a quarter of an hour late) handed back to the owner (D-095).
  */
 
 /** A customer message older than this with no draft covering it is treated as a lost draft job. */
@@ -41,6 +43,8 @@ export const ANALYSIS_REQUEUE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export interface ScanResult {
   draftsRequeued: number;
   analysesRequeued: number;
+  autopilotRestarted: number;
+  autopilotReturned: number;
   tasksOverdue: number;
   parkedUnknown: number;
   requeued: number;
@@ -246,8 +250,9 @@ export async function scanSends(options: { now?: Date; db?: Db; queue?: Queue; d
   const { requeued, templatesFailed } = await requeueUnstamped(db, queue, now);
   const windowsExpiring = await alertExpiringWindows(db, now);
   const tasksOverdue = await alertOverdueTasks(db, now);
+  const { restarted: autopilotRestarted, returned: autopilotReturned } = await repairAutopilotCountdowns(db, now);
   if (parkedUnknown + requeued + templatesFailed + draftsRequeued + analysesRequeued > 0) {
     logger.warn({ parkedUnknown, requeued, templatesFailed, draftsRequeued, analysesRequeued }, 'alerts-scan repaired messages');
   }
-  return { draftsRequeued, analysesRequeued, tasksOverdue, parkedUnknown, requeued, templatesFailed, windowsExpiring };
+  return { draftsRequeued, analysesRequeued, autopilotRestarted, autopilotReturned, tasksOverdue, parkedUnknown, requeued, templatesFailed, windowsExpiring };
 }

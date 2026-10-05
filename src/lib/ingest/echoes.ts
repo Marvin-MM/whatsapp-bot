@@ -3,7 +3,7 @@ import { eq } from 'drizzle-orm';
 import type { Tx } from '@/lib/db';
 import { conversations, messages } from '@/lib/db/schema';
 import { analysisEffect } from '@/lib/analysis/trigger';
-import { supersedeOpenDrafts } from '@/lib/drafts/supersede';
+import { supersedeOpenDrafts, supersededEffects } from '@/lib/drafts/supersede';
 import type { EchoItem } from '@/lib/whatsapp/webhook-schema';
 import { type HandlerResult, RetryLaterError, type IngestContext, nothing } from './context';
 import { conflictEffects, resolveContact } from './contacts';
@@ -89,9 +89,7 @@ export async function ingestEcho(tx: Tx, item: EchoItem, ctx: IngestContext): Pr
   await refreshConversationAggregates(tx, conversationId);
   await setConversationStatus(tx, conversationId, 'waiting_on_customer');
   await tx.update(conversations).set({ consecutiveAutoReplies: 0 }).where(eq(conversations.id, conversationId));
-  for (const draftId of await supersedeOpenDrafts(tx, conversationId)) {
-    effects.push({ type: 'publish', event: { type: 'draft:updated', payload: { conversationId, draftId, status: 'superseded' } } });
-  }
+  effects.push(...supersededEffects(conversationId, await supersedeOpenDrafts(tx, conversationId), 'Not sent: you answered from your phone.'));
   effects.push({ type: 'publish', event: { type: 'conversation:updated', payload: { conversationId } } });
   effects.push(analysisEffect(insertedId));
   return { effects };

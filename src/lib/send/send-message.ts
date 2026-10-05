@@ -68,6 +68,10 @@ export interface QueuedMessage {
   duplicate: boolean;
   /** Present for a template: the worker needs its components, which are not stored on the row. */
   template: TemplateToSend | null;
+  /** The draft this message answers (claimed in the same transaction), and the drafts it replaced: their autopilot countdowns end with the send. */
+  claimedDraftId: string | null;
+  autopilot: boolean;
+  supersededDraftIds: string[];
 }
 
 /** A pre-check refused the message. Thrown inside the transaction so it rolls back; the action layer turns it into a refusal. */
@@ -121,7 +125,7 @@ export async function queueMessage(tx: Tx, input: QueueMessageInput): Promise<Qu
 
   // A second submission with the same key is the same message, not a new one.
   const [existing] = await tx.select({ id: messages.id }).from(messages).where(eq(messages.idempotencyKey, input.idempotencyKey)).limit(1);
-  if (existing) return { messageId: existing.id, conversationId: input.conversationId, duplicate: true, template };
+  if (existing) return { messageId: existing.id, conversationId: input.conversationId, duplicate: true, template, claimedDraftId: null, autopilot: false, supersededDraftIds: [] };
 
   const [setting] = await tx.select({ sendingPaused: settings.sendingPaused }).from(settings).limit(1);
 
@@ -131,6 +135,8 @@ export async function queueMessage(tx: Tx, input: QueueMessageInput): Promise<Qu
   if (input.source.kind === 'draft') {
     [draftRow] = await tx.select().from(drafts).where(and(eq(drafts.id, input.source.draftId), eq(drafts.conversationId, input.conversationId))).for('update');
     if (!draftRow) throw new SendRefused('draft_not_open', 'That draft no longer exists.');
+    // Only a draft whose countdown was started (`scheduled`) can be released by the autopilot: it can never send a draft that was not scheduled.
+    if (input.source.autopilot && draftRow.status !== 'scheduled') throw new SendRefused('draft_not_open', 'This draft was already handled (approved, rejected or replaced).');
     content = input.source.finalContent;
     outboundKind = 'text';
   } else if (input.message.kind === 'text') {
@@ -182,7 +188,7 @@ export async function queueMessage(tx: Tx, input: QueueMessageInput): Promise<Qu
     // Lost a race on the key between the check above and the insert (cannot happen under the conversation lock, but never assume).
     const [winner] = await tx.select({ id: messages.id }).from(messages).where(eq(messages.idempotencyKey, input.idempotencyKey)).limit(1);
     if (!winner) throw new Error('idempotency conflict without a winner');
-    return { messageId: winner.id, conversationId: input.conversationId, duplicate: true, template };
+    return { messageId: winner.id, conversationId: input.conversationId, duplicate: true, template, claimedDraftId: null, autopilot: false, supersededDraftIds: [] };
   }
 
   if (draftRow && input.source.kind === 'draft') {
@@ -191,16 +197,24 @@ export async function queueMessage(tx: Tx, input: QueueMessageInput): Promise<Qu
     const claimed = await tx
       .update(drafts)
       .set({ status: edited ? 'edited' : 'approved', finalMessageId: messageId, approvedAt: now, content: input.source.finalContent })
-      .where(and(eq(drafts.id, draftRow.id), inArray(drafts.status, draftStatusesAllowing(edited ? 'approve_edited' : 'approve'))))
+      .where(and(eq(drafts.id, draftRow.id), inArray(drafts.status, draftStatusesAllowing(input.source.autopilot ? 'autopilot_send' : edited ? 'approve_edited' : 'approve'))))
       .returning({ id: drafts.id });
     if (claimed.length === 0) throw new SendRefused('draft_not_open', 'This draft was already handled.');
   }
 
   await refreshConversationAggregates(tx, input.conversationId);
   // Whatever is still open was written for a conversation that has just moved on.
-  await supersedeOpenDrafts(tx, input.conversationId);
+  const supersededDraftIds = await supersedeOpenDrafts(tx, input.conversationId);
 
-  return { messageId, conversationId: input.conversationId, duplicate: false, template };
+  return {
+    messageId,
+    conversationId: input.conversationId,
+    duplicate: false,
+    template,
+    claimedDraftId: draftRow ? draftRow.id : null,
+    autopilot: input.source.kind === 'draft' && input.source.autopilot === true,
+    supersededDraftIds,
+  };
 }
 
 /** After commit: hand the message to the worker, and tell the dashboard. The enqueue failing is survivable (alerts-scan re-enqueues). */
@@ -210,6 +224,13 @@ export async function announceQueued(queued: QueuedMessage): Promise<void> {
   await runEffects([
     { type: 'publish', event: { type: 'message:new', payload: { conversationId: queued.conversationId, messageId: queued.messageId } } },
     { type: 'publish', event: { type: 'conversation:updated', payload: { conversationId: queued.conversationId } } },
+    // The owner answered (or the autopilot released the draft): drafts this replaced lose their countdowns, and a draft the owner approved while
+    // its countdown was running is no longer waiting to be sent automatically. The autopilot's own send closes its message itself ("Sent").
+    ...queued.supersededDraftIds.flatMap((draftId): Effect[] => [
+      { type: 'publish', event: { type: 'draft:updated', payload: { conversationId: queued.conversationId, draftId, status: 'superseded' } } },
+      { type: 'retire_autopilot', draftId, note: 'Not sent: the conversation moved on.' },
+    ]),
+    ...(queued.claimedDraftId !== null && !queued.autopilot ? [{ type: 'retire_autopilot', draftId: queued.claimedDraftId, note: 'You sent it yourself.' } satisfies Effect] : []),
   ]);
 }
 
