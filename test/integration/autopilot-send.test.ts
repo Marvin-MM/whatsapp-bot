@@ -345,13 +345,15 @@ describe('the safety net under the countdown (alerts-scan)', () => {
     expect(await (await getQueue('autopilot-send').getJob(toJobId(autopilotJobKey(world.draftId))))?.getState()).not.toBe('failed');
   });
 
-  it('only a draft that is still `scheduled` is ever repaired: a pending one carrying an old send time is left alone', async () => {
+  it('only a draft that is still `scheduled` is ever repaired: a pending one carrying an old send time (a few minutes late, or a quarter of an hour) is left alone', async () => {
     const world = await seedAutopilotWorld(sql());
     const { repairAutopilotCountdowns } = await import('@/lib/autopilot/safety-net');
-    await sql()`UPDATE drafts SET scheduled_send_at = ${new Date(NOW.getTime() - 20 * MIN)} WHERE id = ${world.draftId}`;
-    expect(await repairAutopilotCountdowns(getDb(), NOW)).toEqual({ restarted: 0, returned: 0 });
-    expect((await draftRow(world.draftId)).status).toBe('pending');
-    expect(await getQueue('autopilot-send').getJob(toJobId(autopilotJobKey(world.draftId)))).toBeUndefined();
+    for (const lateBy of [3 * MIN, 20 * MIN]) {
+      await sql()`UPDATE drafts SET scheduled_send_at = ${new Date(NOW.getTime() - lateBy)} WHERE id = ${world.draftId}`;
+      expect(await repairAutopilotCountdowns(getDb(), NOW)).toEqual({ restarted: 0, returned: 0 });
+      expect((await draftRow(world.draftId)).status).toBe('pending');
+      expect(await getQueue('autopilot-send').getJob(toJobId(autopilotJobKey(world.draftId)))).toBeUndefined();
+    }
   });
 
   it('leaves a healthy countdown alone', async () => {
