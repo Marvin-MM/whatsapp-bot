@@ -2,22 +2,24 @@
 
 A single-owner assistant for one WhatsApp Business number. Customer messages arrive through the WhatsApp Cloud API webhook;
 the system drafts replies in the owner's own writing style, keeps a rolling summary per conversation, tracks follow-ups the
-owner owes, and shows everything on a real-time, mobile-first dashboard. Nothing is sent without the owner's explicit action
-(autopilot is a later, opt-in, gated phase).
+owner owes, and shows everything on a real-time, mobile-first dashboard. Nothing is sent without the owner's explicit action,
+with one opt-in exception: **autopilot**, which is off, cannot be switched on until it has proven itself on the owner's own replies, and even then
+sends only simple, well-supported replies, after a countdown the owner can cancel.
 
-> **Status: Phase 6 of 8 (analytics and production hardening).** On top of Phase 5 (summaries, tasks, follow-ups): **Analytics** shows how close the drafts
-> are to what you actually send, how fast you answer and what the model costs; **Settings** is split into General, Business profile, **Problems** (failed
-> messages and failed background jobs, with safe retry) and an **Audit log**; the app sends strict security headers; and there is a production stack
-> (Caddy + Docker Compose) with **backups that are proven by restoring them**. **Nothing is ever sent without your explicit approval.** The optional
-> autopilot is Phase 7. What is and is not done is in [`docs/phase-reports/phase-6.md`](docs/phase-reports/phase-6.md); the checks only you can do (real
-> chats, the real model, a real phone, a real server) are in [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately differs from the
+> **Status: Phase 7 of 8 (autopilot, ships OFF).** On top of Phase 6 (analytics, hardening, production stack, proven backups): an **autopilot** that can send
+> simple replies by itself, built so that it is unreachable until it has earned it. **Nothing is sent without your approval while autopilot is off, and it
+> is off until its nine checks pass on your real data** (an evaluation of the drafts and 200 approved drafts with a low edit distance: see **Autopilot**
+> below). What is and is not done is in [`docs/phase-reports/phase-7.md`](docs/phase-reports/phase-7.md); the checks only you can do (real chats, the
+> real model, a real phone, a real server) are in [`docs/ACCEPTANCE.md`](docs/ACCEPTANCE.md); every place this build deliberately differs from the
 > original spec is in [`DECISIONS.md`](DECISIONS.md).
 
 ## Privacy: who sees customer messages
 
 **Customer messages are sent to Groq** (an external LLM provider) to draft replies, summarize conversations, extract your
 style and transcribe voice notes. They also live in your Postgres database and (media) on your disk. Do not use this system
-for conversations that must not leave your infrastructure. Logs never contain message bodies, tokens or full phone numbers.
+for conversations that must not leave your infrastructure. Logs never contain message bodies, tokens or full phone numbers. When autopilot schedules a
+reply, the Telegram message you can cancel it from contains **the reply the assistant wrote** (never the customer's own words) and the customer's name or
+handle: you cannot cancel what you cannot read. Every other Telegram message is ids and counts only.
 
 ## Requirements
 
@@ -94,12 +96,13 @@ Things worth knowing:
 ## Telegram alerts
 
 Alerts (a message that may not have been sent, a reply window about to close, a rejected WhatsApp token, a stuck event) can be sent to
-your Telegram chat. They are **notifications only** and never contain message text.
+your Telegram chat. They are **notifications only** and never contain message text (the one exception is the autopilot's cancel-in-time message, below).
 
 1. In Telegram, talk to **@BotFather**, send `/newbot`, and copy the bot token into `TELEGRAM_BOT_TOKEN`.
 2. Send any message to your new bot. Then open `https://api.telegram.org/bot<TOKEN>/getUpdates` in a browser and copy the number
    at `"chat":{"id": ...}` into `TELEGRAM_CHAT_ID`. (Keep the token secret: anyone with it can post as the bot.)
-3. `TELEGRAM_WEBHOOK_SECRET` is any long random string; it is used from the autopilot phase on, when the bot can also receive taps.
+3. `TELEGRAM_WEBHOOK_SECRET` is any long random string of letters, digits, `_` and `-` (for example `openssl rand -hex 32`); Telegram sends it back with
+   every button tap so the app can tell a tap from anyone else's request. It is only needed for autopilot (see **Autopilot**).
 4. Restart the worker, open **Settings -> Telegram alerts** and press **Send a test message**. Set your quiet hours there: during
    them only critical alerts are sent (everything still appears in the dashboard).
 
@@ -179,11 +182,55 @@ count), what happened to every draft (sent as written, edited, rejected, replace
 **Show the numbers** table. **Cost** appears only if you set `AI_PRICE_PER_MTOK_JSON` (your own prices per million tokens, copied from Groq's pricing
 page): the app has no built-in prices, so without it you see tokens, never an invented cost.
 
+## Autopilot
+
+Autopilot is **off**, and the app will not let you turn it on until it has measured itself against *your* replies. Two things make it safe to leave
+approval mode the default for ever: the gate below, and the fact that every reply it sends waits a few minutes where you can cancel it.
+
+**The gate.** Settings -> Autopilot shows nine checks with their numbers, live: the latest evaluation (`pnpm eval:drafts`) must be at most 30 days old,
+use at least 50 of your replies, have been run with the prompt, model and style guide in use *now*, have a median edit distance at or below
+`AUTOPILOT_MAX_EDIT_DISTANCE` (0.30) and **no invented facts**; and in the last 30 days you must have approved at least **200** drafts with a median at or
+below the same threshold and a 75th percentile at or below 0.50. If a check fails later (the evaluation gets old, you change the model) autopilot stops
+sending and every reply comes back to you.
+
+**Per customer.** Even with the gate passing and the switch on, nothing happens until you switch a *conversation* to autopilot (the reply-mode panel at
+the top of its page; for 24 hours, 7 or 30 days, or until you turn it off). Going back to approval is always one press.
+
+**What it decides.** For a draft in a conversation on autopilot: the rules (the kind of reply is on your allowed list; no risk flag, missing fact or
+`[[placeholder]]`; the 24-hour window has more than 10 minutes left; under your per-customer, per-day and in-a-row limits; not quiet hours; you have
+written to this customer at least three times; it is not an answer to a voice note) and then a **separate checking model** that never sees the drafting
+instructions and fails the reply for any unsupported fact, any promise, a reply that does not answer, or a risky tone. Any doubt, and any error in the
+check itself, means *the reply comes to you*. A complaint, an angry customer or a request for a person is never answered automatically and takes the
+conversation off autopilot.
+
+**The countdown.** A reply that passes becomes "scheduled": you get a Telegram message with the reply and **Cancel** / **Send now** buttons (the same two
+buttons are in Approvals, on the conversation and under Settings -> Autopilot, so a muted Telegram never leaves you without a way to stop it), and it is
+sent after your delay (default 2 minutes). Just before it goes, the state-dependent rules are asked again; if anything changed it goes back to Approvals
+with the reason. The first automatic reply in any 24 hours ends with your disclosure line (default "(sent by my assistant)"; it cannot be empty). If the
+countdown is lost (Redis restarted), the reply is started once more after a minute and returned to you after a quarter of an hour: **nothing is ever sent
+late on the autopilot's own initiative.**
+
+**Afterwards.** Replies sent by autopilot are marked in the thread; **Mark bad** under one flags it and takes that customer off autopilot. A daily digest
+(20:00 your time, only when autopilot did something or is on) lists what was sent, cancelled and handed to you, with the top reasons. Analytics has a card
+for autopilot sent versus handed to you.
+
+**Telegram buttons need a registered webhook.** After deploying (it must be reachable over https), run once:
+
+```bash
+pnpm telegram:webhook          # registers APP_URL/api/webhooks/telegram with TELEGRAM_WEBHOOK_SECRET
+pnpm telegram:webhook --info   # what Telegram has now, and the last delivery error if there is one
+```
+
+Taps are accepted only with the secret header and only from your own chat (`TELEGRAM_CHAT_ID`). Without the webhook the buttons do nothing, but the
+dashboard's Cancel / Send now still work.
+
 ## Settings
 
 - **General**: the kill switches, the WhatsApp connection (when Meta last reached you, the backlog, history-import progress, recent alerts, the webhook
   URL and fields), the **background worker's status**, the token check, and Telegram alerts.
 - **Business profile**: the only source of facts the assistant may state.
+- **Autopilot**: the switch and the nine checks with their numbers, replies counting down (Cancel / Send now), conversations on autopilot, the rules
+  (delay, limits, which kinds of message, the disclosure line) and the replies you marked bad.
 - **Problems**: messages that failed or could not be confirmed, and **failed background jobs** (a draft, a summary, a download, an incoming event that the
   worker gave up on, kept 30 days). **Retry** runs a job again where that is safe; for a send that may already have reached a customer it is disabled and
   says why (check your phone from the conversation instead). **Dismiss** only clears the record.
@@ -224,8 +271,9 @@ have never restored is a hope: rehearse monthly. Everything, including the month
 
 `pnpm test:ai` asks the real draft model a handful of adversarial and fact-checking questions (an injection, a request for its instructions, "are you a
 bot?", a price it was not given) and the real analysis model a few note-taking ones ("call me tomorrow at 3pm" must become 15:00 tomorrow in your
-zone), three times each, and prints how many times each rule held. It needs `GROQ_API_KEY`, `LLM_MODEL_DRAFT` and `LLM_MODEL_ANALYSIS` (in the
-environment or in `.env`), costs a few cents, sends invented text only, and is never run by CI. A pass at 3/3 and a pass at 2/3 are different news:
+zone) and the autopilot's **checking model** a few review ones (an invented stock level, a wrong price, a promise, a defensive tone, a reply that dodges the
+question, an instruction hidden in the reply or in the customer's message: every one must be failed), three times each, and prints how many times each rule
+held. It needs `GROQ_API_KEY`, `LLM_MODEL_DRAFT`, `LLM_MODEL_ANALYSIS` and `LLM_MODEL_VERIFY` (in the environment or in `.env`), costs a few cents, sends invented text only, and is never run by CI. A pass at 3/3 and a pass at 2/3 are different news:
 read the numbers. It uses the throwaway `_test` database.
 
 ## Scripts
@@ -238,13 +286,14 @@ read the numbers. It uses the throwaway `_test` database.
 | `pnpm db:migrate` | Apply migrations with `DATABASE_MIGRATION_URL`. **Never runs during `next build`.** |
 | `pnpm import:chats <path>` | Import WhatsApp chat exports (`--me`, `--dry-run`, `--contact`, `--date-order`) |
 | `pnpm eval:drafts` | Measure draft quality against your most recent real replies (needs `GROQ_API_KEY`) |
+| `pnpm telegram:webhook` | Register the Telegram webhook for the autopilot buttons (`--info` to inspect, `--delete` to remove) |
 | `pnpm seed:owner` | Create the owner and enroll TOTP (`--help`; `--reset` after losing your authenticator) |
 | `scripts/backup.sh [config]` | Back up the database and media (snapshot, optional `age` encryption and `rclone` upload). See `docs/operations/backup-restore.md` |
 | `scripts/restore.sh <folder> [config]` | Restore a backup into an EMPTY database and verify it row by row |
 | `pnpm typecheck` / `pnpm lint` | `tsc --noEmit` / ESLint |
 | `pnpm test` | Unit tests (no services needed) |
 | `pnpm test:integration` | Integration tests against real Postgres + Redis (database must end in `_test`, Redis db 15) |
-| `pnpm test:ai` | Opt-in: behaviour of the REAL draft and analysis models (needs `GROQ_API_KEY`, `LLM_MODEL_DRAFT`, `LLM_MODEL_ANALYSIS`; a few cents) |
+| `pnpm test:ai` | Opt-in: behaviour of the REAL draft, analysis and checking models (needs `GROQ_API_KEY`, `LLM_MODEL_DRAFT`, `LLM_MODEL_ANALYSIS`, `LLM_MODEL_VERIFY`; a few cents) |
 
 ## How it fits together
 
@@ -270,4 +319,4 @@ read the numbers. It uses the throwaway `_test` database.
 | 4 | Drafting + `/approvals` | done (real-model and real-phone checks: `docs/ACCEPTANCE.md`) |
 | 5 | Summaries, tasks, follow-ups | done (real-model checks: `docs/ACCEPTANCE.md`) |
 | 6 | Analytics, hardening, production deploy, backups | done (a real deploy and a real restore drill: `docs/ACCEPTANCE.md`) |
-| 7 | Autopilot (gated by measured quality) | |
+| 7 | Autopilot (gated by measured quality; ships off) | done (a real model, a real Telegram and a real phone: `docs/ACCEPTANCE.md`) |

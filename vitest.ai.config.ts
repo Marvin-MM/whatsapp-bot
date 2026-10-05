@@ -12,7 +12,7 @@ const root = fileURLToPath(new URL('.', import.meta.url));
  * It needs the real key and model ids. They are read from the environment, or from `.env`, but ONLY these names: `.env` also holds
  * DATABASE_URL and friends, and this suite runs against the throwaway `_test` database like the integration tests do.
  */
-const FROM_DOTENV = ['GROQ_API_KEY', 'LLM_MODEL_DRAFT', 'LLM_MODEL_ANALYSIS'] as const;
+const FROM_DOTENV = ['GROQ_API_KEY', 'LLM_MODEL_DRAFT', 'LLM_MODEL_ANALYSIS', 'LLM_MODEL_VERIFY'] as const;
 if (existsSync(`${root}.env`)) {
   const parsed = parseEnv(readFileSync(`${root}.env`, 'utf8'));
   for (const name of FROM_DOTENV) if (!process.env[name] && parsed[name]) process.env[name] = parsed[name];

@@ -257,7 +257,48 @@ These need your real Meta number and your Groq key (and the `LLM_MODEL_ANALYSIS`
 **Expect** `RESTORE VERIFIED: N tables, M rows all equal the backup; K media files.` and no warning lines in the backup run (the warnings mean no encryption or no off-server copy).
 **Tell me** the output, how long each took, and anything that surprised you. Do this BEFORE you have a year of customers in the database, and repeat it monthly.
 
-### 35. Sign off
+### 35. The checking model, on the real model
 
-Tell me which steps passed and which surprised you. Phase 7 (autopilot) does not depend on these, so the build continues without waiting.
+**Do** Put `LLM_MODEL_VERIFY` (and the draft and analysis ids) in `.env` and run `pnpm test:ai`. Read the lines under "the real verifier model".
+**Expect** every scenario at 3/3 or 2/3: a plain supported answer passes; an invented stock level, a wrong price, a promised call, a discount your policy rules out, a defensive tone, a dodged question, an instruction hidden inside the reply, an instruction in the customer's message and a fact only the customer asserted are all FAILED.
+**If not** send me the counts. A scenario that holds only 2/3 times is a reason to keep autopilot off however the numbers look. **Luganda is not tested at all**: send a few of your own Luganda or mixed replies through a conversation later (step 38) and tell me whether it fails what it should.
 
+### 36. The gate, with your real numbers
+
+**Do** After `pnpm eval:drafts` and a few weeks of approving drafts, open **Settings -> Autopilot**.
+**Expect** nine checks, each with its numbers; "Turn on" disabled while any fails, with the failing numbers in words; the same list on any conversation's reply-mode panel (Autopilot greyed out). The check "at least 200 drafts approved in 30 days" counts only drafts you approved or edited, never automatic ones.
+**Tell me** whether a check looks wrong for how you work (a threshold you think is too strict or too loose), and whether the evaluation's median agrees with the Analytics chart.
+
+### 37. The Telegram buttons
+
+**Do** Deploy over https, run `pnpm telegram:webhook`, then `pnpm telegram:webhook --info`.
+**Expect** the URL `APP_URL/api/webhooks/telegram` and no last error. Tap a button on a message from a chat that is not yours (or call the URL without the secret header): nothing happens (the wrong header is a 401).
+**If not** send me the `--info` output (it never prints the token or the secret). Telegram's rules (https on port 443, 80, 88 or 8443; a secret of letters, digits, `_` and `-`) are the usual cause.
+
+### 38. A first conversation on autopilot
+
+**Do** With the gate passing, turn autopilot **on** (it asks once), then switch ONE conversation to autopilot for 24 hours (use a customer you trust, or your own second number). Send a simple question your business profile answers ("What time do you close?").
+**Expect** a Telegram message "Autopilot will reply to NAME in 2 minutes" with the reply text and **Cancel** / **Send now**; after the delay the reply arrives with your disclosure line at the end, the thread marks it "Auto-reply", and the Telegram message loses its buttons and says "Sent." Send a second simple question within 24 hours: no second disclosure line. Press **Mark bad** under the first reply: the conversation goes back to approval mode.
+**Tell me** whether the reply was one you would have sent, and anything in it a customer could misread.
+
+### 39. What must NOT be automatic
+
+**Do** In that conversation (switch it back on after Mark bad) send, one at a time: a complaint ("this is unacceptable"), a voice note, a question the profile does not answer (a price you have not written down), "ok thanks", and a message asking for a person.
+**Expect** each to wait in Approvals with the reason in words ("Autopilot did not send this: ..."), except "ok thanks", which is closed without a reply; the complaint and the request for a person also take the conversation off autopilot and alert you.
+**If not** send me the message and what happened: an automatic reply to any of these is the failure this whole design exists to prevent.
+
+### 40. Cancel, Send now, a lost countdown, the kill switch
+
+**Do** (1) Start a countdown and press **Cancel** in Telegram; start another and press it on the dashboard. (2) Start one and press **Send now**. (3) Start one, stop the worker for four minutes and start it again. (4) Start one and press **Turn off now** under Settings -> Autopilot.
+**Expect** (1) the draft in Approvals and the Telegram message rewritten without buttons; (2) it goes out at once, still checked; (3) after the next 5-minute scan the countdown is restarted once and the reply goes out; if the worker was down for 15 minutes or more it is NOT sent but returned to Approvals ("the countdown was lost"); (4) the draft in Approvals and the buttons gone.
+**Tell me** anything that went out that you had cancelled or switched off.
+
+### 41. The daily digest
+
+**Do** After a day with some automatic activity, wait for 20:00 your time (or check the next day).
+**Expect** ONE Telegram message listing sent, cancelled, handed to you, and the top reasons, with a link to Settings -> Autopilot; none on a day autopilot was off and did nothing; none during quiet hours.
+**Tell me** whether the numbers match what you saw, and whether the reasons it lists are useful.
+
+### 42. Sign off
+
+Tell me which steps passed and which surprised you. The build is complete; these checks, run on a real server with your real accounts, are what remains.

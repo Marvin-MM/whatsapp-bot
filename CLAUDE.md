@@ -1,7 +1,7 @@
 # CLAUDE.md: standing memory for this repo
 
 Single-owner WhatsApp Business reply assistant: webhook ingest -> style-matched drafts -> owner approval -> send ->
-summaries/tasks -> (later, gated) autopilot. One owner, one number, <500 msgs/day, one instance of each process.
+summaries/tasks -> (gated, off by default) autopilot. One owner, one number, <500 msgs/day, one instance of each process.
 No horizontal scaling, no multi-tenancy. Every abstraction must justify itself against that.
 
 Authority: the build spec (phases 0-7), amended by `DECISIONS.md`. Read `DECISIONS.md` first: it records where this repo
@@ -137,8 +137,18 @@ that has never failed has proven nothing: mutation-check security tests. Real-mo
   `scripts/db-init/01-roles.sql`): a backup is one snapshot (dump + row counts), a failed backup leaves nothing, uploads are refused unencrypted, and a
   restore goes only into an EMPTY database and prints `RESTORE VERIFIED` only when every row count matches. Never weaken those refusals; rehearse a
   restore after changing either script.
+- **Autopilot (Phase 7)**: it ships OFF and is unreachable until the live gate passes (`eligibility.ts`: nine checks, never cached, each with its numbers).
+  The decision is the PURE `policy.ts` (every rule reports; add a rule there with its own test) plus an independent verifier (`verify.ts`, `verify-v1`:
+  any error is a failure; changing its prompt needs `pnpm test:ai` and a look at real replies). The autopilot never sends from the draft code: it only
+  schedules (`decide.ts`, which never throws), and `autopilot-send` re-asks rules 1, 2, 6, 7, 8, 9 under the conversation lock and releases through THE
+  send path (`queueMessage`, `autopilot: true`, event `autopilot_send` from `scheduled` only, provenance `ai_autopilot`). Lock order: conversation, then
+  draft. `retireAutopilotDraft` must never touch a draft that is still `scheduled`. A draft the autopilot sent has no edit distance on purpose (it must
+  not feed the record it is judged on). The Telegram webhook checks the secret header, then the chat id, in constant time before doing anything; status
+  codes are chosen for Telegram's retries (401 bad secret; 200 for anything that cannot become an action; 500 only when acting failed). Turning autopilot on
+  or switching a conversation to it needs the gate; going back to approval and turning it off never do. The scheduled-send Telegram message carries the
+  reply text (D-096): the one place a notification holds text. Copy that says "nothing is sent without your approval" must depend on `autopilotPaused`.
 - **Notifications**: alerts go through `raiseAlert` (deduped); the Telegram sink is registered in the worker only; `info` alerts are
-  dashboard-only; quiet hours silence everything but critical; no message bodies in any notification or audit entry.
+  dashboard-only; quiet hours silence everything but critical; no message bodies in any notification or audit entry (the one exception: the autopilot countdown message shows the AI's reply, D-096).
 - **Test infra**: `setupIngestHarness()` for ingest tests (not `use*`: the React-hooks lint rule trips on the prefix). Every guard test is
   mutation-checked (`scratchpad` script pattern: break the code, watch the right test fail, restore). Verify UI in Chromium against
   `pnpm build`, not only in tests (Phase 1 found five real defects that way, Phase 4 five more), and LOOK at the screenshots: an assertion that

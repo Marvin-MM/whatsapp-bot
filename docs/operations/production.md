@@ -69,6 +69,16 @@ Register the webhook with Meta (README, "Connecting WhatsApp"): callback URL `ht
 `WEBHOOK_VERIFY_TOKEN`, and the fields `messages`, `smb_message_echoes`, `history`, `smb_app_state_sync`, `user_id_update`, `account_update`.
 **Settings -> General** shows the same list and when Meta last reached you.
 
+Register the Telegram webhook (only needed for the autopilot's Cancel / Send now buttons; autopilot is off until its checks pass, so this can wait):
+
+```bash
+docker compose -f docker-compose.prod.yml run --rm web node_modules/.bin/tsx --conditions=react-server scripts/telegram-webhook.ts
+docker compose -f docker-compose.prod.yml run --rm web node_modules/.bin/tsx --conditions=react-server scripts/telegram-webhook.ts --info
+```
+
+It points Telegram at `https://<your domain>/api/webhooks/telegram` with `TELEGRAM_WEBHOOK_SECRET`, and never prints the token or the secret. Telegram
+requires https; the route accepts a tap only with that secret and only from `TELEGRAM_CHAT_ID`.
+
 ### Set up backups before you have data worth losing
 
 Do this now, not later: [backup-restore.md](backup-restore.md).
@@ -126,5 +136,6 @@ full phone numbers.
 - [ ] Meta's webhook verification succeeds (the callback URL turns green) and a message from another phone appears in **Chats** within seconds.
 - [ ] A browser's developer console on every page shows **no Content-Security-Policy violation** (the policy is strict: scripts only with a per-request nonce).
 - [ ] Login rate limiting counts **your** address: five wrong passwords from one address are refused, and another address is not affected (this proves Caddy's `X-Forwarded-For` handling).
+- [ ] `telegram-webhook.ts --info` shows your URL and no last error (it matters from the day you first switch autopilot on).
 - [ ] A backup runs, a copy reaches the off-server destination, and **you restored it once into a scratch database** (backup-restore.md).
 - [ ] Reboot the server: everything comes back by itself (`restart: unless-stopped`).
