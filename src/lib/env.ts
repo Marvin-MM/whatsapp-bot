@@ -21,6 +21,28 @@ function isValidTimeZone(name: string): boolean {
   }
 }
 
+/** Price per million tokens, per model id, in the owner's currency. Every number is the owner's: nothing here is a built-in price. */
+export const aiPriceListSchema = z.object({
+  currency: z.string().min(1).max(8),
+  models: z.record(z.string().min(1), z.object({ input: z.number().min(0), output: z.number().min(0) })),
+});
+export type AiPriceList = z.infer<typeof aiPriceListSchema>;
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
+
+/** The configured price list, or null when none is set (or it is unusable: the env check already refuses a malformed one at startup). */
+export function readAiPrices(raw: string | undefined): AiPriceList | null {
+  if (raw === undefined) return null;
+  const parsed = aiPriceListSchema.safeParse(parseJson(raw));
+  return parsed.success ? parsed.data : null;
+}
+
 export const envSchema = z.object({
   // Core
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -52,6 +74,11 @@ export const envSchema = z.object({
   TRANSCRIBE_AUDIO: bool.default(true),
   DRAFT_DEBOUNCE_SECONDS: z.coerce.number().int().min(1).max(600).default(25),
   AUTOPILOT_MAX_EDIT_DISTANCE: z.coerce.number().min(0).max(1).default(0.3),
+  // Optional: what the models cost, so Analytics can show a cost line. Without it only tokens are shown: a price is never guessed.
+  AI_PRICE_PER_MTOK_JSON: z
+    .string()
+    .optional()
+    .refine((value) => value === undefined || aiPriceListSchema.safeParse(parseJson(value)).success, 'must be JSON like {"currency":"USD","models":{"model-id":{"input":0.15,"output":0.6}}} (prices per million tokens)'),
   // Media
   MEDIA_STORAGE_DIR: z.string().min(1).default('./data/media'),
   // Telegram

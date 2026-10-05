@@ -33,6 +33,10 @@ export function alertPath(kind: string): string {
       return '/approvals';
     case 'window_expiring':
       return '/conversations?filter=needs_reply';
+    case 'message_unknown':
+    case 'message_requeued':
+    case 'analysis_failed':
+      return '/settings/problems';
     default:
       return '/settings';
   }

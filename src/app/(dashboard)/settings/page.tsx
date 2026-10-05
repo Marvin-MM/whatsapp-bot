@@ -1,24 +1,20 @@
 import { eq } from 'drizzle-orm';
 import type { Metadata } from 'next';
-import Link from 'next/link';
-import { ProfileEditor } from '@/components/settings/profile-editor';
 import { KillSwitchControls } from '@/components/settings/kill-switch-controls';
 import { TelegramSettings } from '@/components/settings/telegram-settings';
 import { TokenHealth } from '@/components/settings/token-health';
-import { DeliveryStatus } from '@/components/conversations/delivery-status';
-import { metaCodeSuffix } from '@/components/conversations/message-bubble';
-import { PageHeader } from '@/components/shared/page-header';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatFullTimestamp } from '@/lib/conversations/format';
 import { getIngestHealth } from '@/lib/dashboard/ingest-health';
-import { getProblemMessages } from '@/lib/dashboard/send-health';
 import { getShellState } from '@/lib/dashboard/shell-state';
 import { getDb } from '@/lib/db';
 import { settings } from '@/lib/db/schema';
 import { getEnv } from '@/lib/env';
 import { maskPhone } from '@/lib/logger';
 import { readTokenHealth } from '@/lib/ops/token-health';
+import { readWorkerHealth } from '@/lib/ops/worker-health';
+import { getProducerConnection } from '@/lib/queue/connection';
 import { requireOwnerPage } from '@/server/require-owner';
 
 export const metadata: Metadata = { title: 'Settings' };
@@ -46,9 +42,9 @@ export default async function SettingsPage() {
   await requireOwnerPage();
   const env = getEnv();
   const db = getDb();
-  const [health, shell, problems, tokenHealth] = await Promise.all([getIngestHealth(db), getShellState(), getProblemMessages(db), readTokenHealth()]);
+  const [health, shell, tokenHealth, worker] = await Promise.all([getIngestHealth(db), getShellState(), readTokenHealth(), readWorkerHealth(getProducerConnection(), env.BULLMQ_PREFIX)]);
   const [prefs] = await db
-    .select({ notifyTelegram: settings.notifyTelegram, quietHours: settings.quietHours, ownerName: settings.ownerName, businessName: settings.businessName, businessProfile: settings.businessProfile })
+    .select({ notifyTelegram: settings.notifyTelegram, quietHours: settings.quietHours })
     .from(settings)
     .where(eq(settings.id, 1))
     .limit(1);
@@ -57,17 +53,6 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" description="WhatsApp connection, business profile, kill switches and audit log." />
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Business profile</CardTitle>
-          <CardDescription>What the assistant is allowed to say about your business.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ProfileEditor ownerName={prefs?.ownerName ?? ''} businessName={prefs?.businessName ?? ''} businessProfile={prefs?.businessProfile ?? ''} />
-        </CardContent>
-      </Card>
 
       <Card className="mb-6">
         <CardHeader>
@@ -76,44 +61,6 @@ export default async function SettingsPage() {
         </CardHeader>
         <CardContent>
           <KillSwitchControls aiPaused={shell.aiPaused} sendingPaused={shell.sendingPaused} autopilotPaused={shell.autopilotPaused} />
-        </CardContent>
-      </Card>
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle>Messages that need attention</CardTitle>
-          <CardDescription>Messages that failed, could not be confirmed, or are still waiting to be sent.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {problems.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Nothing. Every message you sent went through.</p>
-          ) : (
-            <ul className="divide-y divide-border text-sm">
-              {problems.map((problem) => (
-                <li key={problem.messageId} className="flex flex-col gap-1 py-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0 space-y-0.5">
-                    <p className="flex items-center gap-2">
-                      <DeliveryStatus status={problem.status} />
-                      <time dateTime={problem.at.toISOString()} className="text-xs text-muted-foreground">
-                        {formatFullTimestamp(problem.at, env.OWNER_TIMEZONE)}
-                      </time>
-                    </p>
-                    {problem.error ? (
-                      <p className="text-xs text-muted-foreground">
-                        {problem.error.message}
-                        {metaCodeSuffix(problem.error.code)}
-                      </p>
-                    ) : problem.status === 'queued' ? (
-                      <p className="text-xs text-muted-foreground">Waiting for the worker. If this stays here, check that the worker is running.</p>
-                    ) : null}
-                  </div>
-                  <Link href={`/conversations/${problem.conversationId}`} className="shrink-0 text-sm underline underline-offset-4">
-                    Open conversation
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
         </CardContent>
       </Card>
 
@@ -131,6 +78,20 @@ export default async function SettingsPage() {
             <Stat label="Stuck over 10 min" value={health.stuck} tone={health.stuck > 0 ? 'danger' : undefined} />
             <Stat label="Set aside (24 h)" value={health.settledWithNote24h} />
           </dl>
+          <section aria-labelledby="worker-heading" className="space-y-2">
+            <h3 id="worker-heading" className="text-sm font-semibold">
+              Background worker
+            </h3>
+            <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Stat label="Worker" value={worker.alive ? 'Running' : 'Not running'} tone={worker.alive ? undefined : 'danger'} />
+              <Stat label="Last heartbeat" value={worker.ageSeconds === null ? 'None' : `${worker.ageSeconds} s ago`} tone={worker.alive ? undefined : 'danger'} />
+            </dl>
+            {worker.alive ? null : (
+              <p role="alert" className="text-sm text-destructive">
+                Nothing is being sent, drafted or summarised until the worker runs: start it with <code>pnpm worker</code> (or <code>docker compose up -d worker</code>). Customer messages are still received and kept.
+              </p>
+            )}
+          </section>
           {health.stuck > 0 ? (
             <p role="alert" className="text-sm text-destructive">
               Some events have waited more than ten minutes. The worker is probably not running: start it with <code>pnpm dev:worker</code>.

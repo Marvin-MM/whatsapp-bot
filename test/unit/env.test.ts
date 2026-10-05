@@ -38,6 +38,7 @@ const WITH_DEFAULTS = [
   'DRAFT_DEBOUNCE_SECONDS',
   'AUTOPILOT_MAX_EDIT_DISTANCE',
   'MEDIA_STORAGE_DIR',
+  'AI_PRICE_PER_MTOK_JSON', // optional: absent means "no cost line"
 ];
 
 function without(name: string): Record<string, string> {
@@ -65,6 +66,16 @@ describe('env schema', () => {
 
   it.each(WITH_DEFAULTS)('allows %s to be omitted', (name) => {
     expect(parseEnv(without(name)).ok).toBe(true);
+  });
+
+  it('accepts a well-formed price list and refuses a malformed one by name (a cost chart must never quietly lie)', () => {
+    const good = JSON.stringify({ currency: 'USD', models: { 'openai/gpt-oss-120b': { input: 0.15, output: 0.6 } } });
+    expect(parseEnv({ ...TEST_ENV_DEFAULTS, AI_PRICE_PER_MTOK_JSON: good }).ok).toBe(true);
+    for (const bad of ['not json', '{}', '{"currency":"USD"}', '{"currency":"USD","models":{"m":{"input":-1,"output":1}}}', '{"currency":"USD","models":{"m":{"input":"1","output":1}}}', '[]']) {
+      const result = parseEnv({ ...TEST_ENV_DEFAULTS, AI_PRICE_PER_MTOK_JSON: bad });
+      expect(result.ok, bad).toBe(false);
+      if (!result.ok) expect(result.issues.map((issue) => issue.name)).toContain('AI_PRICE_PER_MTOK_JSON');
+    }
   });
 
   it('treats an empty value (KEY=) as missing', () => {

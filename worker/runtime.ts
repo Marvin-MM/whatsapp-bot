@@ -2,16 +2,15 @@ import { Worker } from 'bullmq';
 import type { Redis } from 'ioredis';
 import { getEnv } from '@/lib/env';
 import { logger } from '@/lib/logger';
+import { HEARTBEAT_INTERVAL_SECONDS, HEARTBEAT_TTL_SECONDS, heartbeatKey } from '@/lib/ops/worker-health';
 import { createWorkerConnection, getProducerConnection } from '@/lib/queue/connection';
 import { QUEUE_SETTINGS } from '@/lib/queue/queues';
 import type { WorkerRegistration } from './registry';
 
-const HEARTBEAT_INTERVAL_MS = 15_000;
-const HEARTBEAT_TTL_SECONDS = 60;
+const HEARTBEAT_INTERVAL_MS = HEARTBEAT_INTERVAL_SECONDS * 1000;
 
-export function heartbeatKey(prefix: string): string {
-  return `${prefix}:worker:heartbeat`;
-}
+// The key and its timing live with the reader (`lib/ops/worker-health.ts`) so the two cannot drift apart.
+export { heartbeatKey };
 
 export interface WorkerRuntime {
   workers: Worker[];

@@ -15,9 +15,13 @@ export interface ResponseTime {
  * the phone counts: it is a reply). Imported history, failed sends, reactions and customer-deleted messages are not measured. It includes
  * nights and weekends on purpose: the customer waited that long. A median, so one slow Sunday does not move it.
  */
-export async function medianResponseTime(db: Db, now: Date, days = 7): Promise<ResponseTime> {
-  const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
-  const rows = await db.execute<{ median: number | null; n: number }>(sql`
+/**
+ * The shared definition of a "first response" (see above) as a CTE named `answered(asked_at, replied_at)`; `replied_at` is null while the owner
+ * has not answered. Everything that reports response times (the Overview card, the Analytics chart) builds on this one fragment, so the two can
+ * never disagree about what a response is.
+ */
+export function answeredCte(since: Date) {
+  return sql`
     WITH seq AS (
       SELECT id, conversation_id, direction, occurred_at,
              lag(direction) OVER (PARTITION BY conversation_id ORDER BY occurred_at, id) AS prev_direction
@@ -25,14 +29,20 @@ export async function medianResponseTime(db: Db, now: Date, days = 7): Promise<R
       WHERE type <> 'reaction' AND provenance <> 'imported' AND status <> 'failed' AND deleted_at IS NULL
     ), firsts AS (
       SELECT id, conversation_id, occurred_at FROM seq
-      WHERE direction = 'inbound' AND (prev_direction IS NULL OR prev_direction = 'outbound') AND occurred_at > ${since}::timestamptz
+      WHERE direction = 'inbound' AND (prev_direction IS NULL OR prev_direction = 'outbound') AND occurred_at > ${since.toISOString()}::timestamptz
     ), answered AS (
       SELECT f.occurred_at AS asked_at,
              (SELECT min(o.occurred_at) FROM messages o
               WHERE o.conversation_id = f.conversation_id AND o.direction = 'outbound' AND o.status <> 'failed' AND o.provenance <> 'imported'
                 AND o.type <> 'reaction' AND o.occurred_at > f.occurred_at) AS replied_at
       FROM firsts f
-    )
+    )`;
+}
+
+export async function medianResponseTime(db: Db, now: Date, days = 7): Promise<ResponseTime> {
+  const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const rows = await db.execute<{ median: number | null; n: number }>(sql`
+    ${answeredCte(since)}
     SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM replied_at - asked_at)) AS median, count(*)::int AS n
     FROM answered WHERE replied_at IS NOT NULL
   `);

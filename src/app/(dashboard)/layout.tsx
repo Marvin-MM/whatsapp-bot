@@ -32,7 +32,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           <div className="ml-auto flex items-center gap-1">
             <RealtimeListener />
             <Link
-              href="/settings"
+              href="/settings/problems"
               aria-label={`${state.problemCount} messages need attention`}
               className="inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm hover:bg-muted"
             >

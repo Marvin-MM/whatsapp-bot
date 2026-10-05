@@ -39,7 +39,9 @@ describe('.env.example', () => {
     const filled: Record<string, string> = {};
     for (const [key, value] of documented) {
       if (key === 'NODE_ENV') continue;
-      filled[key] = value === '' ? 'x'.repeat(40) : value;
+      // A value in single quotes is the dotenv way to write JSON: the quotes are not part of the value.
+      const unquoted = /^'(.*)'$/.exec(value)?.[1] ?? value;
+      filled[key] = unquoted === '' ? 'x'.repeat(40) : unquoted;
     }
     filled.OWNER_EMAIL = 'owner@example.test';
     filled.META_GRAPH_VERSION = 'v25.0';
