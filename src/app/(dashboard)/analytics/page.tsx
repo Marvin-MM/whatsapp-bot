@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { StackedBar } from '@/components/analytics/stacked-bar';
 import { ChartCard, Figure } from '@/components/analytics/chart-card';
 import { EditDistanceChart, FirstResponseChart, OutcomesChart, TokensChart, VolumeChart } from '@/components/analytics/charts';
 import { EmptyState } from '@/components/shared/empty-state';
@@ -135,15 +136,14 @@ export default async function AnalyticsPage({ searchParams }: { searchParams: Pr
                           {total} · {t.open} open · {t.done} done · {t.cancelled} cancelled
                         </span>
                       </div>
-                      <div className="flex h-2.5 overflow-hidden rounded-full bg-muted" role="img" aria-label={`${TASK_TYPE_LABEL[t.type]}: ${t.open} open, ${t.done} done, ${t.cancelled} cancelled`}>
-                        {total > 0 ? (
-                          <>
-                            <div className="bg-warning" style={{ width: `${(t.open / total) * 100}%` }} />
-                            <div className="bg-success" style={{ width: `${(t.done / total) * 100}%` }} />
-                            <div className="bg-muted-foreground/50" style={{ width: `${(t.cancelled / total) * 100}%` }} />
-                          </>
-                        ) : null}
-                      </div>
+                      <StackedBar
+                        label={`${TASK_TYPE_LABEL[t.type]}: ${t.open} open, ${t.done} done, ${t.cancelled} cancelled`}
+                        segments={[
+                          { value: t.open, fillClass: 'fill-warning' },
+                          { value: t.done, fillClass: 'fill-success' },
+                          { value: t.cancelled, fillClass: 'fill-muted-foreground/50' },
+                        ]}
+                      />
                     </li>
                   );
                 })}
