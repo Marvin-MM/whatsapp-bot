@@ -57,7 +57,8 @@ services:
   worker:
     profiles: ["full"]
     build: .
-    command: ["pnpm", "worker"]
+    # Started directly, not through pnpm: corepack would have to download pnpm inside the container (see the Dockerfile).
+    command: ["node_modules/.bin/tsx", "--conditions=react-server", "worker/index.ts"]
     env_file: .env
     environment:
       NODE_ENV: production

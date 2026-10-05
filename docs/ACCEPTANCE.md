@@ -228,7 +228,36 @@ These need your real Meta number and your Groq key (and the `LLM_MODEL_ANALYSIS`
 **Expect** the four cards (drafts to approve, waiting for your reply, open tasks with the late count, median first reply) and a **Needs attention** list with one line per problem, worst first. A failed send you have already sent again should NOT be listed.
 **Tell me** whether the median first reply matches your feel, and whether anything you consider urgent is missing from the list.
 
-### 30. Sign off
+### 30. Analytics
 
-Tell me which steps passed and which surprised you. Phase 6 (analytics, hardening, deployment) does not depend on these, so the build continues without waiting.
+**Do** After a week or two of real use (at least 20 drafts you approved), open **Analytics** on 7, 30 and 90 days.
+**Expect** the first chart is the edit distance of your drafts with a dotted line at the autopilot threshold; the numbers under "Show the numbers" agree with what you remember (a day you sent nothing is a zero, not a gap); "Messages per day" matches your sense of a busy day in YOUR time zone (not UTC: a late-evening message is on that evening); the median first reply feels right; no cost line unless you set `AI_PRICE_PER_MTOK_JSON`.
+**Tell me** any number that looks wrong, with the day. A median edit distance you find too high or too low for how much you actually rewrite is the most useful finding: it is the number autopilot will be judged on.
+
+### 31. Problems and the audit log
+
+**Do** Open **Settings -> Problems** and **Audit log**. If a failed background job exists, press **Retry** on one (or **Dismiss**); filter the audit log by an action and by a date; open a conversation from an entry's link.
+**Expect** problem messages with a reason in words; a failed job with its queue and error, Retry enabled for a draft/summary/download and DISABLED for a send that may have reached a customer (with the reason); the audit log newest first, with who, what and when, never what a message said, and no way to edit or delete an entry.
+**If not** tell me which control did nothing, or anything shown that you would not want on a screen over your shoulder (a phone number, a message).
+
+### 32. The security headers, in your own browser
+
+**Do** On your real deployment, open the dashboard with the browser's developer tools (Console and Network) and click through every page, including a conversation with a voice note and Analytics.
+**Expect** **no** message mentioning "Content Security Policy" or "Refused to ...", and on any page's document response the headers `Content-Security-Policy` (with a `nonce-`), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` and `Strict-Transport-Security`.
+**If not** send me the exact console line: the policy is meant to have zero violations, and this is the one check that runs it behind your real certificate.
+
+### 33. The first deploy
+
+**Do** Follow `docs/operations/production.md` on a real server, and tick its first-deploy checklist (healthy containers, both health URLs over a valid certificate, Meta's webhook verification, a real message appearing, five wrong passwords from one address being refused while another address is not, a reboot).
+**Expect** every box ticks. **Tell me** every step that was wrong, missing or unclear: the compose stack and the Caddyfile have never run on a real Docker daemon.
+
+### 34. Backups, and a restore you have watched succeed
+
+**Do** Set up `scripts/backup.sh` as `docs/operations/backup-restore.md` says (encryption key kept off the server, an off-server destination, a daily schedule), run it once, then do the **restore rehearsal** into a scratch database from the copy that reached the off-server location.
+**Expect** `RESTORE VERIFIED: N tables, M rows all equal the backup; K media files.` and no warning lines in the backup run (the warnings mean no encryption or no off-server copy).
+**Tell me** the output, how long each took, and anything that surprised you. Do this BEFORE you have a year of customers in the database, and repeat it monthly.
+
+### 35. Sign off
+
+Tell me which steps passed and which surprised you. Phase 7 (autopilot) does not depend on these, so the build continues without waiting.
 

@@ -15,6 +15,7 @@ pnpm install && pnpm db:migrate   # migrations run as the migrator role, never d
 pnpm seed:owner                   # creates the owner, enrolls TOTP (prompts; --help for flags)
 pnpm dev / pnpm dev:worker        # web / worker (tsx --conditions=react-server)
 pnpm typecheck && pnpm lint && pnpm test && pnpm test:integration
+scripts/backup.sh [config] / scripts/restore.sh <folder> [config]   # production backups; docs/operations/
 ```
 Gate commits on REAL exit codes. Never pipe a gate through `tail`/`grep` and then commit: that hides failures.
 
@@ -40,7 +41,7 @@ is a deterministic policy function), Socket.io, Prisma, NextAuth, TanStack Query
 - `src/lib/**` and `worker/**` must not import `next/*` or `react`. Framework code lives in `src/app`, `src/actions`,
   `src/components`, `src/server`. Modules with secrets `import 'server-only'` (tests alias it; the worker runs with `--conditions=react-server`).
 - `process.env` is read only in `src/lib/env.ts` (plus `src/instrumentation.ts` for `NEXT_RUNTIME`, configs, tests).
-- `proxy.ts` only redirects. **Every page, server action and route handler verifies the session itself**
+- `proxy.ts` only redirects and sets the page security headers (CSP nonce): it authorizes nothing. **Every page, server action and route handler verifies the session itself**
   (`requireOwnerPage`, `ownerAction`, `checkOwner`); a valid session = configured owner AND TOTP enrolled.
 - Every mutation is an `ownerAction`: auth -> Zod -> handler + audit entry in ONE transaction (failure rolls back both).
 - App DB role (`wab_app`) has DML only and is append-only on `audit_log`; migrations use `wab_migrator`.
@@ -119,6 +120,23 @@ that has never failed has proven nothing: mutation-check security tests. Real-mo
   text never goes in an audit entry or an alert (it comes from customer messages). Owner task changes are conditional updates; owner-typed times are
   `OWNER_TIMEZONE` wall clock (`parseLocalDateTime`). An overdue alert's key carries the due time. The `alerts-scan` analysis requeue is bounded to
   24 hours on purpose (D-077): never let a safety net replay history through a model.
+- **Analytics and operations (Phase 6)**: day buckets are the owner's calendar days (`buildRange`, `AT TIME ZONE`, date arithmetic on date strings, never
+  on instants); edit distance is grouped by `approved_at` and counts only drafts the owner approved; cost exists only with `AI_PRICE_PER_MTOK_JSON` (no
+  built-in prices, ever). A failed-jobs "Retry" is allowed for an `outbound-send` job ONLY when its message is `queued` and was never stamped
+  (`retryVerdict`); an `unknown`/stamped send and any `autopilot-send` are never retried from the panel. The worker heartbeat is judged by age
+  (`judgeHeartbeat`: alive up to 45 s). The audit viewer shows ids and kinds, never text.
+- **Security headers and the CSP (Phase 6)**: `proxy.ts` sets a per-request nonce CSP (`src/lib/security/headers.ts`) and keeps `/api` OUT of its matcher,
+  because a proxy makes Next buffer request bodies (10 MB) and would undo the webhook's own 3 MiB cap; API routes get their fixed headers from
+  `next.config.ts` (a test keeps both in step). Every page must render dynamically (a prerendered page has no nonce): `not-found.tsx` calls
+  `connection()`. No `style={...}` in `src` (a test enforces it: the policy allows style ATTRIBUTES only for Recharts' wrapper; use Tailwind classes or
+  SVG). Nothing in the browser may need `eval` (Zod's JIT probe is disabled in `browser-setup.tsx`). Check a UI change for CSP violations in Chromium
+  on the production build (`securitypolicyviolation` events), not just in tests.
+- **Production and backups (Phase 6)**: `docker-compose.prod.yml` passes containers ONLY the variables it lists (no `env_file`; a test requires every env
+  schema key to be listed), and web/worker never receive the migration role's password. The images start `next`/`tsx` directly, not through pnpm.
+  `scripts/backup.sh` and `restore.sh` are exercised by `test/integration/backup-restore.test.ts` (needs the `wab_restore_test` database from
+  `scripts/db-init/01-roles.sql`): a backup is one snapshot (dump + row counts), a failed backup leaves nothing, uploads are refused unencrypted, and a
+  restore goes only into an EMPTY database and prints `RESTORE VERIFIED` only when every row count matches. Never weaken those refusals; rehearse a
+  restore after changing either script.
 - **Notifications**: alerts go through `raiseAlert` (deduped); the Telegram sink is registered in the worker only; `info` alerts are
   dashboard-only; quiet hours silence everything but critical; no message bodies in any notification or audit entry.
 - **Test infra**: `setupIngestHarness()` for ingest tests (not `use*`: the React-hooks lint rule trips on the prefix). Every guard test is
@@ -129,4 +147,5 @@ that has never failed has proven nothing: mutation-check security tests. Real-mo
 ## Layout
 `src/app` routes - `src/actions` server actions - `src/components` UI - `src/server` framework-bound server helpers -
 `src/lib` framework-free domain (db, state, queue, realtime, auth, ai, send, whatsapp, notify, ops, ...) - `worker` BullMQ workers +
-schedulers - `scripts` seed/migrate/import/eval - `drizzle` SQL migrations (generated + hand-written grants) - `test`.
+schedulers - `scripts` seed/migrate/import/eval/backup/restore (+ `db-init`, `db-init-prod`) - `drizzle` SQL migrations (generated + hand-written grants) -
+`deploy` Caddyfile - `docs/operations` production + backup guides - `docs/phase-reports` - `test`.
